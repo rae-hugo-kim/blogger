@@ -41,3 +41,5 @@ risks:
 references:
   - path: docs/harness/kickoff-summary.md
     reason: 킥오프 인터뷰 전체 요약
+  - path: docs/tone-guide.md
+    reason: 콘텐츠 정제 파이프라인의 톤/형식 기준
