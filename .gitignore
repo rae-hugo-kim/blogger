@@ -6,3 +6,15 @@
 !.claude/settings.json
 docs/sum/
 docs/brainstorming/
+
+# Hugo
+public/
+.hugo_build.lock
+resources/_gen/
+
+# Python
+__pycache__/
+*.pyc
+
+# OMC state
+.omc/

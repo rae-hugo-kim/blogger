@@ -1,0 +1,44 @@
+name: Refine draft content
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "drafts/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refine:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Run refine pipeline
+        run: python scripts/refine.py --drafts-dir drafts --output-dir content/posts
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet content/posts/ && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: Commit refined drafts
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add content/posts/
+          git commit -m "refine: auto-generate refined drafts from drafts/"
+          git push

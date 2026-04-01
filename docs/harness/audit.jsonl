@@ -1,0 +1,4 @@
+{"ts":"2026-03-31T18:33:34+09:00","event":"kickoff_completed","actor":"assistant","meta":{"topic":"blogger - Hugo 기술 블로그 + AI 콘텐츠 정제 파이프라인"}}
+{"ts":"2026-03-31T18:33:34+09:00","event":"seed_generated","actor":"assistant","meta":{"seed_path":"docs/harness/seed.yaml","status":"draft","version":1}}
+{"ts":"2026-03-31T18:33:34+09:00","event":"rubric_evaluated","actor":"assistant","meta":{"goal":"HIGH","constraints":"HIGH","success":"HIGH","context":"MEDIUM"}}
+{"ts":"2026-03-31T18:34:53+09:00","event":"startdev_started","actor":"assistant","meta":{"seed_version":1,"seed_status":"draft"}}
