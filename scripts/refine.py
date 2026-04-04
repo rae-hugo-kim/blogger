@@ -4,12 +4,20 @@ Processes raw markdown files from drafts/ and generates refined drafts
 with proper Hugo frontmatter.
 """
 
+import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 import yaml
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 
 class RefineError(Exception):
@@ -156,12 +164,44 @@ def refine(path: Path) -> RefineResult:
     if "draft" not in fm:
         fm["draft"] = True
 
-    return RefineResult(frontmatter=fm, body=body, warnings=warnings)
+    refined_body = _ai_refine(body)
+    if refined_body != body:
+        warnings.append("AI refinement applied")
+
+    return RefineResult(frontmatter=fm, body=refined_body, warnings=warnings)
 
 
 def _ai_refine(body: str) -> str:
-    """AI refinement hook (no-op for now)."""
-    return body
+    """Refine body text using Claude API based on tone guide, with graceful fallback."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return body
+
+    tone_guide_path = Path(__file__).parent.parent / "docs" / "tone-guide.md"
+    if not tone_guide_path.exists():
+        return body
+
+    try:
+        from anthropic import Anthropic  # lazy import: optional dependency
+
+        tone_guide = tone_guide_path.read_text(encoding="utf-8")
+        system_prompt = (
+            tone_guide
+            + "\n\n아래 마크다운 본문을 위 톤 가이드에 맞게 정제해주세요. "
+            "코드 블록, 링크, 이미지 경로는 절대 변경하지 마세요. "
+            "프론트매터는 건드리지 마세요. 정제된 본문만 반환하세요."
+        )
+        client = Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-5-20250929",
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{"role": "user", "content": body}],
+        )
+        return message.content[0].text
+    except Exception as exc:  # noqa: BLE001
+        logging.warning("AI refinement failed, using original body: %s", exc)
+        return body
 
 
 def process_drafts(drafts_dir: Path, output_dir: Path) -> ProcessResult:
