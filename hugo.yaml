@@ -1,6 +1,6 @@
 baseURL: "https://rae-hugo-kim.github.io/blogger/"
 languageCode: "ko"
-title: "래의 기술 블로그"
+title: "Rae-Hugo-Kim's Blog"
 theme: "blowfish"
 
 enableRobotsTXT: true
