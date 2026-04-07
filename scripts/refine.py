@@ -222,3 +222,45 @@ def process_drafts(drafts_dir: Path, output_dir: Path) -> ProcessResult:
         )
 
     return result
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    parser = argparse.ArgumentParser(description="Refine markdown drafts for Hugo blog.")
+    parser.add_argument("--drafts-dir", default="drafts", type=Path, metavar="DIR")
+    parser.add_argument("--output-dir", default="content/posts", type=Path, metavar="DIR")
+    parser.add_argument("--dry-run", action="store_true", help="Print results to stdout without writing files.")
+    parser.add_argument("--single", type=Path, metavar="FILE", help="Refine a single file instead of the whole drafts dir.")
+    parser.add_argument("--no-ai", action="store_true", help="Disable AI refinement by clearing ANTHROPIC_API_KEY.")
+    args = parser.parse_args()
+
+    if args.no_ai:
+        os.environ["ANTHROPIC_API_KEY"] = ""
+
+    try:
+        if args.single:
+            result = refine(args.single)
+            if result.warnings:
+                for w in result.warnings:
+                    print(f"warning: {w}")
+            print(result.to_markdown())
+        elif args.dry_run:
+            for md_file in sorted(args.drafts_dir.glob("*.md")):
+                result = refine(md_file)
+                print(f"=== {md_file} ===")
+                if result.warnings:
+                    for w in result.warnings:
+                        print(f"warning: {w}")
+                print(result.to_markdown())
+                print()
+        else:
+            process_result = process_drafts(args.drafts_dir, args.output_dir)
+            for entry in process_result.processed:
+                print(f"{entry['source']} -> {entry['slug']}")
+    except RefineError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        sys.exit(1)
