@@ -15,9 +15,10 @@ resources/_gen/
 # Python
 __pycache__/
 *.pyc
+.venv/
 
 # OMC state
 .omc/
 
 # Environment variables
-.env
+.env*

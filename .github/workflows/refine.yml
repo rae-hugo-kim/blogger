@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - "drafts/**"
+      - "content/drafts/**"
   workflow_dispatch:
 
 permissions:
@@ -24,12 +24,12 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pyyaml anthropic python-dotenv
+        run: pip install -r requirements.txt
 
       - name: Run refine pipeline
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python scripts/refine.py --drafts-dir drafts --output-dir content/posts
+        run: python scripts/refine.py --drafts-dir content/drafts --output-dir content/posts
 
       - name: Check for changes
         id: changes

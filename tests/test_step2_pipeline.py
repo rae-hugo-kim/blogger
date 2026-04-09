@@ -243,8 +243,9 @@ class TestContentPreservation:
 class TestIdempotency:
     """정제 파이프라인 멱등성 검증."""
 
-    def test_double_refine_produces_same_result(self, refine_module, sample_md_no_frontmatter):
-        """같은 파일을 두 번 정제해도 결과가 동일."""
+    def test_double_refine_produces_same_result(self, refine_module, sample_md_no_frontmatter, monkeypatch):
+        """같은 파일을 두 번 정제해도 결과가 동일 (AI 비결정성 제외)."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         result1 = refine_module.refine(sample_md_no_frontmatter)
         # 첫 번째 결과를 파일로 저장 후 다시 정제
         refined_path = sample_md_no_frontmatter.parent / "refined.md"
@@ -278,32 +279,24 @@ class TestEdgeCases:
 class TestIntegration:
     """통합 테스트: drafts/ → content/posts/ 파이프라인."""
 
-    def test_drafts_to_content_pipeline(self, refine_module, sample_md_no_frontmatter):
+    def test_drafts_to_content_pipeline(self, refine_module, sample_md_no_frontmatter, tmp_path):
         """drafts/ 폴더의 md가 content/posts/에 초안으로 생성됨."""
-        drafts_dir = PROJECT_ROOT / "drafts"
-        drafts_dir.mkdir(exist_ok=True)
+        drafts_dir = tmp_path / "drafts"
+        output_dir = tmp_path / "posts"
 
-        # drafts에 테스트 파일 배치
-        src = drafts_dir / "test-pipeline.md"
+        # page bundle 구조로 테스트 파일 배치
+        bundle = drafts_dir / "test-pipeline"
+        bundle.mkdir(parents=True)
+        src = bundle / "index.md"
         src.write_text(sample_md_no_frontmatter.read_text(encoding="utf-8"), encoding="utf-8")
 
-        try:
-            result = refine_module.process_drafts(drafts_dir, PROJECT_ROOT / "content" / "posts")
-            assert len(result.processed) >= 1, "No files processed"
+        result = refine_module.process_drafts(drafts_dir, output_dir)
+        assert len(result.processed) >= 1, "No files processed"
 
-            # 생성된 파일 확인
-            output_dir = PROJECT_ROOT / "content" / "posts" / "test-pipeline"
-            assert output_dir.exists(), "Output directory not created"
-            assert (output_dir / "index.md").exists(), "index.md not created"
-        finally:
-            # 정리
-            if src.exists():
-                src.unlink()
-            output_dir = PROJECT_ROOT / "content" / "posts" / "test-pipeline"
-            if output_dir.exists():
-                for f in output_dir.iterdir():
-                    f.unlink()
-                output_dir.rmdir()
+        # 생성된 파일 확인
+        out_bundle = output_dir / "test-pipeline"
+        assert out_bundle.exists(), "Output directory not created"
+        assert (out_bundle / "index.md").exists(), "index.md not created"
 
     def test_github_actions_yaml_valid(self):
         """GitHub Actions 워크플로 YAML이 유효한 구문."""
