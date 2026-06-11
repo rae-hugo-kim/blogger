@@ -1,11 +1,10 @@
-
-# Local files
-.claude/*
-!.claude/skills/
-!.claude/hooks/
-!.claude/settings.json
+# Local archives
 docs/sum/
 docs/brainstorming/
+
+# Harness runtime state (OMP)
+.omp/harness-state/
+.omp/state/
 
 # Hugo
 public/
@@ -17,7 +16,7 @@ __pycache__/
 *.pyc
 .venv/
 
-# OMC state
+# OMC state (transient)
 .omc/
 
 # Environment variables

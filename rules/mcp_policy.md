@@ -2,36 +2,38 @@
 
 This document defines when and how to use MCP (Model Context Protocol) servers.
 
+> **OMP registration note**: MCP 서버는 OMP 자체의 MCP config에 등록해야 인식된다 (`omp://mcp-config.md` 참조) — Claude Code의 `~/.claude.json`은 OMP가 읽지 않는다. 아래 정책(어떤 서버를 언제 쓰는가)은 그대로 유지된다. LSP의 경우 OMP는 빌트인 `lsp` 도구를 모델에 직접 노출한다(`omp://tools/lsp.md`); 아래 레이어 A/B 및 `mcp__plugin_oh-my-claudecode_t__lsp_*` 도구명은 Claude Code 시절 기준 표기다.
+
 ## Priority Order
 
 When multiple tools can accomplish the same task:
 
 1. **MCP tools** (specialized, maintained) over generic alternatives
-2. **Symbolic tools** (Serena with `--context claude-code`) over text-based file operations
-3. **Cached/indexed sources** (Context7) over live web search
+2. **Cached/indexed sources** (Context7) over live web search
 
 ---
 
 ## LSP Layering (Code Navigation & Symbols)
 
-**Purpose**: 네 개의 독립 LSP 레이어가 공존할 때 어느 레이어를 언제 쓰는지 규정한다.
+**Purpose**: 세 개의 독립 LSP 레이어가 공존할 때 어느 레이어를 언제 쓰는지 규정한다.
 
-### 4 Layers
+### 3 Layers
 
 | Layer | What | Model-visible? | 활성 조건 |
 |---|---|---|---|
 | **A. Claude Code native LSP** | Claude Code 본체(v2.0.74+)가 내부적으로 쓰는 심볼 룩업/진단(~50ms) | ✗ (툴 비노출) | 자동 — 설치된 언어 서버를 런타임이 인식 |
 | **B. Official plugins** (e.g. `typescript-lsp`) | 레이어 A에 언어 서버 바이너리를 바인딩하는 Claude 공식 플러그인 | ✗ (A 경유) | 플러그인 설치 + 전역 바이너리 설치 (예: `npm i -g typescript-language-server typescript`) |
 | **C. OMC MCP LSP** (`mcp__plugin_oh-my-claudecode_t__lsp_*`) | 모델이 직접 호출하는 LSP 원시 API (hover, goto_definition, find_references, diagnostics, diagnostics_directory, document_symbols, workspace_symbols, rename, prepare_rename, code_actions, code_action_resolve, servers) | ✓ | 언어 서버 바이너리가 PATH에 있을 때 자동 스폰 |
-| **D. Serena MCP** (`mcp__serena__*`) | 심볼 단위 **의미 편집** (replace_symbol_body, insert_before/after_symbol, safe_delete_symbol, rename_symbol) + name-path 트리 | ✓ | `--context claude-code` 필수 |
+
+(구 레이어 D — Serena 의미 편집 — 는 정책 폐기. 하단 "Serena — 정책 폐기" 참조.)
 
 ### Call-priority ordering
 
 1. **편집기 내부 룩업·진단(투명)** → 레이어 A 자동. 모델이 호출할 일 없음.
 2. **단순 LSP 원시 질의** (hover / goto_definition / find_references / code_actions) → 레이어 C
 3. **프로젝트 전역 진단** → 레이어 C의 `lsp_diagnostics_directory`
-4. **심볼 바디 치환·삽입·삭제, 의미 단위 refactor** → 레이어 D (C에는 이 기능 없음)
-5. **새 파일 숙지** → 레이어 D의 `get_symbols_overview` → `find_symbol` 흐름 우선
+4. **심볼 단위 편집** → `edit` 직접 수행 (라인 앵커가 위치 정밀성 보장). 위치가 불확실하면 레이어 C로 정의/참조를 먼저 확인
+5. **새 파일 숙지** → 레이어 C `lsp_document_symbols`로 구조 확인 → 필요한 범위만 `read`
 
 ### Completion evidence (복원)
 
@@ -44,44 +46,43 @@ When multiple tools can accomplish the same task:
 
 ### Overlap suppression
 
-- Serena는 **MUST** `--context claude-code`로 구동 (OMC LSP와 겹치는 hover/goto 비활성 → 토큰·429 리스크 감소).
 - `typescript-lsp` 공식 플러그인(B)과 OMC LSP(C)가 같은 TS 서버를 각각 별도 프로세스로 띄울 수 있음. 메모리 중복은 의도적 허용, 기능 충돌 없음.
 
 ### Language-server absence fallback
 
 필요한 언어 서버 바이너리가 PATH에 없어 레이어 B·C가 비활성일 때:
-- 모델 호출 가능한 원시 LSP 기능은 부재 → 레이어 D(Serena) + `Grep`/`Read`로 전환
+- 모델 호출 가능한 원시 LSP 기능은 부재 → `search`/`read`로 전환
 - 진단: `mcp__plugin_oh-my-claudecode_t__lsp_servers`로 설치 상태 일괄 조회
 - 복구: 해당 언어 서버 전역 설치 (예: `npm i -g typescript-language-server typescript`)
 
-### Grep vs LSP 판단 로직
+### Search vs LSP 판단 로직
 
 **원칙**: 질의가 **구조적**(심볼·타입·참조)인가 **문자열 기반**(리터럴·패턴)인가를 먼저 분류한다.
 
 | 질의 유형 | 우선 툴 |
 |---|---|
 | 심볼 정의·참조·타입·진단 | **MUST** 레이어 C (`lsp_goto_definition`, `lsp_find_references`, `lsp_diagnostics`) |
-| 심볼 단위 편집 (바디 치환·삽입·삭제) | **MUST** 레이어 D (Serena) — C에 해당 기능 없음 |
-| 새 파일 또는 >500줄 파일의 구조 파악 | **SHOULD** 레이어 D `get_symbols_overview` |
-| 문자열·주석·에러 메시지·환경변수·설정값 | **MUST** `Grep` |
-| 파일·디렉토리 이름 패턴 | **MUST** `Glob` |
-| 심볼명 모름 (의도 기반 탐색, 코드베이스 <100파일 또는 키워드 확정적) | **SHOULD** `Grep`에 관련 키워드 복수(OR)로 후보 추림 → 레이어 C로 정밀화 |
-| **콜드스타트 + 의도 기반 (코드베이스 >500파일, CLAUDE.md/AGENTS.md로 미해결)** | **SHOULD** `grepai search` Top-5 → 레이어 C로 정밀화 (trial) |
+| 심볼 단위 편집 (바디 치환·삽입·삭제) | **MUST** `edit` (라인 앵커; 레이어 C로 참조 선확인) |
+| 새 파일 또는 >500줄 파일의 구조 파악 | **SHOULD** 레이어 C `lsp_document_symbols` |
+| 문자열·주석·에러 메시지·환경변수·설정값 | **MUST** `search` |
+| 파일·디렉토리 이름 패턴 | **MUST** `find` |
+| 심볼명 모름 (의도 기반 탐색, 코드베이스 <100파일 또는 키워드 확정적) | **SHOULD** `search`에 관련 키워드 복수(OR)로 후보 추림 → 레이어 C로 정밀화 |
+| **콜드스타트 + 의도 기반 (코드베이스 >500파일, AGENTS.md/CLAUDE.md로 미해결)** | **SHOULD** `grepai search` Top-5 → 레이어 C로 정밀화 (trial) |
 | **유저가 "grepai"·"의미 기반 검색"을 명시** | **MUST** `grepai search` 경유 |
 | 동적 디스패치·설정 주도·폴리글롯 코드의 call 추적 | **MAY** `grepai trace callers/callees` — 단일언어 정적코드는 `lsp_find_references` 우선 |
 
 **MUST NOT**:
-- LSP 가용 상태에서 심볼 참조를 `Grep` 단독으로 결론 (주석·유사 식별자 오탐 위험)
-- 파일 전체 `Read` 후 눈으로 심볼 탐색 — `lsp_document_symbols` 또는 `get_symbols_overview` 선행
-- 심볼명·파일경로·리터럴이 유저 프롬프트에 이미 주어졌는데 `grepai` 호출 (LSP/Grep 직행)
-- `grepai` 랭킹만으로 작업 결론 — 상위 1–2개를 LSP/Read로 검증해야 함
+- LSP 가용 상태에서 심볼 참조를 `search` 단독으로 결론 (주석·유사 식별자 오탐 위험)
+- 파일 전체 `read` 후 눈으로 심볼 탐색 — `lsp_document_symbols` 선행
+- 심볼명·파일경로·리터럴이 유저 프롬프트에 이미 주어졌는데 `grepai` 호출 (LSP/search 직행)
+- `grepai` 랭킹만으로 작업 결론 — 상위 1–2개를 LSP/read로 검증해야 함
 
 **MAY skip LSP** when:
 - 수정 위치가 이미 정확히 특정된 단일 라인 편집
-- 비코드 파일(md / yaml / json) — Grep·Read로 충분
+- 비코드 파일(md / yaml / json) — search·read로 충분
 
-**비고 — 시맨틱 검색 레이어 (grepai, 2주 시범)**:
-CLI + Skill 래퍼 경로로 도입(MCP 서버 아님 → context tax 0). 상세 라우팅은 `.claude/skills/grepai-search/SKILL.md`. 종료 조건: (a) 일 평균 <1회 호출 또는 (b) 오도 사례 > 유도 사례 → skill 디렉토리 삭제로 롤백. 배경: `docs/sum/session_2026-04-21_grepai-adoption-decision.md`.
+**비고 — 시맨틱 검색 레이어 (grepai, 이벤트 기반 시범)**:
+CLI + Skill 래퍼 경로로 도입(MCP 서버 아님 → context tax 0). 상세 라우팅은 `.omp/skills/grepai-search/SKILL.md`. 시범 평가는 시간이 아니라 **트리거 이벤트** 기준: 전제조건(>500파일 unfamiliar 코드베이스 콜드스타트)이 충족된 작업 3회 누적 후, (a) 오도 ≥ 유도 또는 (b) 트리거 충족에도 미호출이면 skill 디렉토리 삭제로 롤백. (구 "2주" 시간 조건은 2026-06-10까지 트리거 0회 — 전제 미발생으로 평가 자체가 불성립해 교체.) 배경: `docs/sum/session_2026-04-21_grepai-adoption-decision.md`.
 
 ---
 
@@ -106,28 +107,18 @@ CLI + Skill 래퍼 경로로 도입(MCP 서버 아님 → context tax 0). 상세
 
 ---
 
-## Serena (Symbolic Code Analysis)
+## Serena — 정책 폐기 (2026-06-10)
 
-**Purpose**: LSP-based code navigation, refactoring, and symbolic editing.
+Serena MCP에 대한 MUST/SHOULD 정책(구 레이어 D, 심볼 단위 의미 편집 우선)을 제거했다.
 
-### SHOULD use when:
-- Finding symbol definitions and references (`find_symbol`, `find_referencing_symbols`)
-- Understanding call hierarchy and dependencies
-- Refactoring (rename, extract, move)
-- Getting file/symbol overview (`get_symbols_overview`)
-- `replace_symbol_body` / `insert_before_symbol` — 심볼 단위 편집이 필요할 때
-
-### MAY skip when:
-- Simple single-line edits where exact location is known
-- Non-code files (markdown, config, etc.)
-- OMC LSP tools로 충분한 단순 탐색 (goto definition, find references)
-
-### Best Practices:
-- **MUST** run with `--context claude-code` flag to disable tools that overlap with OMC LSP (reduces token cost and 429 risk)
-- Use `get_symbols_overview` before diving into a new file
-- Prefer `find_symbol` with `include_body=True` over reading entire files
-- Use `replace_symbol_body` for function/method replacements
-- Use `replace_content` with regex for targeted line edits
+- **근거**: 전 프로젝트·전 기간 세션 로그에서 Serena 도구 호출 0회. 고유 기능(의미
+  편집)은 실재하나, agentic 편집은 블록 재생성 + `edit` 라인 앵커가 흡수하고
+  (context-gate의 read-before-edit 강제로 "안 읽고 편집"이라는 전제 자체가 불성립),
+  탐색·rename·진단 수요는 레이어 A/C가 흡수한다 — 정책이 가치를 벌지 못함.
+- **서버는 폐기하지 않음**: 설치는 그대로이며 ad-hoc 사용은 MAY (OMP에서 쓰려면 OMP MCP config 등록 필요 — `omp://mcp-config.md`).
+  켜고 끄는 법: `rules/context_management.md`의 lazy-loading 스크립트 참조.
+- **재도입 트리거**: 2000줄+ 파일 다수의 대형 레포 작업이 일상화되거나, 의미 편집이
+  `edit` 대비 우위인 사례가 실제 관측될 때. 복원은 git history의 이 섹션 참조.
 
 ---
 

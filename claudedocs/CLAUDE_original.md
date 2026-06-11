@@ -1,11 +1,13 @@
 <!-- policy-sync-warning:start -->
 warning_type: reference_only
 non_normative_reference_only: true
-last_sync_date: 2026-03-31
-status: synced
-source_of_truth: ../CLAUDE.md
-source_commit_hash: 9388ab2f9f3746adc23b23dd0ae25733b7c5d821
+last_sync_date: 2026-06-10
+status: stale
+source_of_truth: ../AGENTS.md
+source_commit_hash: b379ed5a64db3eea14433d41706b5d385782e203
 <!-- policy-sync-warning:end -->
+
+> **Provenance**: upstream Claude Code-era original (long-form expansion of the old `CLAUDE.md`), kept verbatim for history. The current policy entry point is `../AGENTS.md`.
 
 # CLAUDE.md (Team Standard) — Expanded English Reference
 
@@ -69,8 +71,7 @@ This repo assumes **oh-my-claudecode** is active globally. The harness hooks and
 | What | How | Hook Location |
 |------|-----|---------------|
 | Code changes | Delegated to executor agents | N/A (global rule) |
-| Scope enforcement | `scope-gate` hook | `.claude/hooks/harness/` |
-| Pre-edit file read | `context-gate` + `read-tracker` hooks | `.claude/hooks/harness/` |
+| Pre-edit file read | `context-gate` + `read-tracker` + `write-tracker` hooks | `.claude/hooks/harness/` |
 | Completion verification | Architect agent | N/A (global rule) |
 | Backpressure on failures | `backpressure-gate` + `backpressure-tracker` hooks | `.claude/hooks/harness/` |
 | Acceptance criteria | `acceptance-gate` hook | `.claude/hooks/harness/` |
@@ -84,9 +85,9 @@ All hooks are registered in `.claude/settings.json` and included in the repo.
 
 Each hook enforces a specific gate:
 
-1. **`scope-gate`** (PreToolUse: Edit/Write) — blocks edits to out-of-scope paths. Reads `docs/harness/seed.yaml` (out_of_scope list) or `docs/harness/current-scope.md`. Logs to `.omc/harness-state/hook-debug.log`.
-2. **`context-gate`** (PreToolUse: Edit/Write) — blocks edits to files that have not been read in the current session. Paired with `read-tracker`.
-3. **`read-tracker`** (PostToolUse: Read) — records file reads so `context-gate` knows what has been seen. State stored in `.omc/harness-state/read-log.txt`.
+1. **`context-gate`** (PreToolUse: Edit/Write) — blocks edits to files that have not been read in the current session. Paired with `read-tracker` and `write-tracker`.
+2. **`read-tracker`** (PostToolUse: Read) — records file reads so `context-gate` knows what has been seen. State stored in `.omc/harness-state/read-log.txt`.
+3. **`write-tracker`** (PostToolUse: Edit/Write) — records files written so `context-gate` does not re-block editing a file created earlier in the session. Appends to the same `.omc/harness-state/read-log.txt`. Safe because PostToolUse fires only on success and the triggering write was already gated.
 4. **`acceptance-gate`** (PreToolUse: Bash) — blocks commits with unmet acceptance criteria. Reads `docs/harness/current-scope.md` checkboxes and `docs/harness/seed.yaml`.
 5. **`backpressure-gate`** (PreToolUse: Bash) — blocks commits if a previous build/test/lint run failed. Reads `.omc/harness-state/backpressure-status`.
 6. **`backpressure-tracker`** (PostToolUse: Bash) — records build/test/lint outcomes so `backpressure-gate` has current state.
@@ -96,7 +97,6 @@ Each hook enforces a specific gate:
 
 If a required gate is missing, do **not** claim automated harness compliance for that gate. Instead, apply manual downgrade:
 
-- Missing `scope-gate` → manually enumerate in-scope files before edits and re-check before commit.
 - Missing `context-gate` → manually record files read before each edit batch.
 - Missing `acceptance-gate` → provide explicit evidence section: commands, outputs, file citations.
 - Missing `backpressure-gate` → after any failed verification, halt feature work until failure is resolved.
@@ -110,7 +110,7 @@ Final report MUST name which gate was unavailable, how the manual checklist was 
 
 These are hard rules with no silent exceptions:
 
-- **No guessing**: do not invent versions, commands, APIs, or files.
+- **No guessing**: do not invent versions, commands, APIs, or files; and do not conclude an artifact is absent from one narrow guess — when its path is uncertain, search broadly first (see `rules/information_discovery.md`).
 - **Repo commands**: never guess build/test/lint/typecheck/e2e/eval commands. Discover them from the repo (see Command Discovery section).
 - **Risky actions**: require explicit user approval before proposing or executing risky changes.
 - **Verification**: every user-impacting change must include at least one reproducible verification artifact.
@@ -231,7 +231,6 @@ Do not execute or propose the following without explicit user request and approv
 | MCP Server | Policy |
 |------------|--------|
 | **Context7** | MUST use for new external APIs/SDKs, dependencies, version-sensitive syntax |
-| **Serena** | SHOULD use for symbol navigation, refactoring, code understanding |
 | **Supabase** | MUST use migrations for DDL; MAY use direct SQL for queries |
 | **Web Search** | SHOULD use for current events, errors, latest docs |
 
@@ -247,6 +246,21 @@ Use Context7 (`mcp__context7__query-docs`) before writing code that involves:
 Invocation: include `use context7` in the prompt, or specify `use library /org/project` (e.g., `/vercel/next.js`).
 
 **Prohibited without Context7**: generating library-related code based on training data alone when the library is version-sensitive.
+
+---
+
+## Agent Routing Policy (Trigger-Based)
+
+Delegate verification work to the standing agents below. Exploration, research, and implementation are handled directly (or by built-in agents such as Explore/general-purpose); only the two verification lanes carry standing delegation triggers.
+
+| Agent | When to Delegate |
+|-------|------------------|
+| **reviewer** | SHOULD delegate for code changes ≥10 lines or logic changes; runs a 3-pass adversarial review (self + Codex + OMC) |
+| **verifier** | MUST delegate before claiming task completion when acceptance criteria exist |
+
+The MCP delegation matrix (researcher/db-worker/refactorer/full-context) was retired
+2026-06 after usage measurement showed zero delegations across all projects; see
+`rules/agent_routing.md` for the retirement record and reinstatement trigger.
 
 ---
 
@@ -454,6 +468,7 @@ The following linked modules expand specific rules. Consult them for full detail
 | `rules/agent_security.md` | Agent-specific security rules |
 | `rules/anti_hallucination.md` | No-guessing discipline and evidence ladder |
 | `rules/repo_command_discovery.md` | How to discover build/test commands |
+| `rules/information_discovery.md` | Breadth-first search for info artifacts before concluding absence |
 | `rules/mcp_policy.md` | Full MCP server policies |
 | `rules/context7_policy.md` | When and how to use Context7 |
 | `rules/verification_tests_and_evals.md` | Tests, evals, EDD, verification paths |
@@ -469,8 +484,11 @@ The following linked modules expand specific rules. Consult them for full detail
 | `rules/cost_awareness.md` | Token cost awareness |
 | `rules/learning_policy.md` | How to capture and reuse learnings |
 | `rules/coding_standards.md` | Naming, immutability, file size, single responsibility |
+| `rules/doc_standards.md` | Documentation standards and conventions |
 | `rules/hook_recipes.md` | Hook patterns and recipes |
 | `rules/session_persistence.md` | Session state and persistence rules |
+| `rules/adversarial_review.md` | Adversarial multi-pass review (self + Codex + OMC) |
+| `rules/agent_routing.md` | Which agent to delegate to, by trigger |
 
 ---
 

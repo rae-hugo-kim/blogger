@@ -22,6 +22,7 @@ If both global and local guidance exist for the same tool choice, apply global-h
 - Agent security (adversarial threats, prompt injection defense): [`agent_security.md`](agent_security.md)
 - Anti-hallucination & evidence ladder: [`anti_hallucination.md`](anti_hallucination.md)
 - Repo command discovery (never guess commands): [`repo_command_discovery.md`](repo_command_discovery.md)
+- Information discovery (breadth-first search before concluding absence): [`information_discovery.md`](information_discovery.md)
 
 ## Quality rails
 
@@ -36,7 +37,7 @@ If both global and local guidance exist for the same tool choice, apply global-h
 
 - MCP server policies (when/how to use): [`mcp_policy.md`](mcp_policy.md)
 - Context7 policy (trigger-based): [`context7_policy.md`](context7_policy.md)
-- Hook recipes (concrete hook implementations): [`hook_recipes.md`](hook_recipes.md)
+- Hook recipes (OMP extension recipes for quality automation): [`hook_recipes.md`](hook_recipes.md)
 
 ## Process rails
 

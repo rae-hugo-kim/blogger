@@ -1,13 +1,15 @@
 <!-- policy-sync-warning:start -->
 warning_type: reference_only
 non_normative_reference_only: true
-last_sync_date: 2026-03-31
-status: synced
-source_of_truth: ../CLAUDE.md
-source_commit_hash: 9388ab2f9f3746adc23b23dd0ae25733b7c5d821
+last_sync_date: 2026-06-10
+status: stale
+source_of_truth: ../AGENTS.md
+source_commit_hash: b379ed5a64db3eea14433d41706b5d385782e203
 <!-- policy-sync-warning:end -->
 
-# CLAUDE.md (에이전트 규칙 - 계층형)
+# AGENTS.md 한국어 미러 (에이전트 규칙 - 계층형)
+
+> **status: stale** — 이 문서는 `../AGENTS.md`의 한국어 미러이며, OMP 포트 이후 아직 재생성되지 않았다. 본문은 Claude Code 시절 CLAUDE.md 기준이므로 경로·메커니즘 서술이 현행과 다를 수 있다. 규범은 항상 `../AGENTS.md`.
 
 이 파일은 **항상-on(always-on)** 에이전트 정책입니다. 짧게 유지합니다.
 
@@ -32,8 +34,7 @@ source_commit_hash: 9388ab2f9f3746adc23b23dd0ae25733b7c5d821
 | 항목 | 방법 | 훅 위치 |
 |------|------|---------|
 | 코드 변경 | executor 에이전트에 위임 | N/A (글로벌 규칙) |
-| 범위 적용 | `scope-gate` 훅 | `.claude/hooks/harness/` |
-| 편집 전 파일 읽기 | `context-gate` + `read-tracker` 훅 | `.claude/hooks/harness/` |
+| 편집 전 파일 읽기 | `context-gate` + `read-tracker` + `write-tracker` 훅 | `.claude/hooks/harness/` |
 | 완료 검증 | Architect 에이전트 | N/A (글로벌 규칙) |
 | 실패 시 배압 | `backpressure-gate` + `backpressure-tracker` 훅 | `.claude/hooks/harness/` |
 | 인수 기준 | `acceptance-gate` 훅 | `.claude/hooks/harness/` |
@@ -87,7 +88,7 @@ Harness 검증 계약 세부 사항: [`rules/harness_integration_contract.md`](.
 
 ## 양보 불가 항목 (MUST)
 
-- **추측 금지**: 버전, 커맨드, API, 파일을 발명하지 않습니다.
+- **추측 금지**: 버전, 커맨드, API, 파일을 발명하지 않습니다. 또한 한 군데만 좁게 확인하고 산출물이 "없다"고 단정하지 않습니다 — 경로가 불확실하면 먼저 넓게 검색합니다 ([`rules/information_discovery.md`](../rules/information_discovery.md)).
 - **레포 커맨드**: build/test/lint/typecheck/e2e/eval 커맨드를 추측하지 않습니다. 레포에서 찾아 사용합니다.
 - **위험 작업**: 위험한 변경을 제안/실행하기 전에 명시적 승인을 받습니다.
 - **검증**: 사용자 영향 변경은 최소 1개의 재현 가능한 검증 아티팩트가 있어야 합니다.
@@ -117,15 +118,22 @@ Harness 검증 계약 세부 사항: [`rules/harness_integration_contract.md`](.
 
 - 전체 정책은 [`rules/mcp_policy.md`](../rules/mcp_policy.md)를 참조합니다.
 - **Context7**: 새로운 외부 API/SDK, 의존성, 버전 민감 문법에는 MUST 사용.
-- **Serena**: 심볼 탐색, 리팩토링, 코드 이해에 SHOULD 사용.
 - **Supabase**: DDL에는 MUST 마이그레이션 사용; 쿼리에는 MAY 직접 SQL 사용.
 - **Web Search**: 최신 이벤트, 오류, 최신 문서에 SHOULD 사용.
+
+## 에이전트 라우팅 정책 (트리거 기반)
+
+- 전체 라우팅 규칙은 [`rules/agent_routing.md`](../rules/agent_routing.md)를 참조합니다
+  (2026-06 미사용 MCP 위임 매트릭스 폐기 기록 포함).
+- **reviewer**: 10줄 이상 코드 변경 또는 로직 변경에 SHOULD 위임. 3-패스 적대 리뷰(self + Codex + OMC).
+- **verifier**: AC가 존재할 때 작업 완료 주장 전에 MUST 위임.
 
 ## 연결된 모듈
 
 - Safety & security: [`rules/safety_security.md`](../rules/safety_security.md)
 - Anti-hallucination & evidence: [`rules/anti_hallucination.md`](../rules/anti_hallucination.md)
 - Repo command discovery: [`rules/repo_command_discovery.md`](../rules/repo_command_discovery.md)
+- Information discovery (breadth-first): [`rules/information_discovery.md`](../rules/information_discovery.md)
 - MCP server policies: [`rules/mcp_policy.md`](../rules/mcp_policy.md)
 - Context7 trigger policy: [`rules/context7_policy.md`](../rules/context7_policy.md)
 - Verification (tests + evals): [`rules/verification_tests_and_evals.md`](../rules/verification_tests_and_evals.md)
@@ -141,9 +149,12 @@ Harness 검증 계약 세부 사항: [`rules/harness_integration_contract.md`](.
 - Cost awareness: [`rules/cost_awareness.md`](../rules/cost_awareness.md)
 - Learning policy: [`rules/learning_policy.md`](../rules/learning_policy.md)
 - Coding standards: [`rules/coding_standards.md`](../rules/coding_standards.md)
+- Documentation standards: [`rules/doc_standards.md`](../rules/doc_standards.md)
 - Agent security: [`rules/agent_security.md`](../rules/agent_security.md)
 - Hook recipes: [`rules/hook_recipes.md`](../rules/hook_recipes.md)
 - Session persistence: [`rules/session_persistence.md`](../rules/session_persistence.md)
+- Adversarial review: [`rules/adversarial_review.md`](../rules/adversarial_review.md)
+- Agent routing: [`rules/agent_routing.md`](../rules/agent_routing.md)
 
 ## 체크리스트 (필요 시 사용)
 
