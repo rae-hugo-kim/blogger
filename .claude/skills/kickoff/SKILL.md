@@ -153,6 +153,7 @@ Write 도구로 `docs/harness/kickoff-summary.md`에 아래 Output Format 전체
 **필드 매핑:**
 - `version`: 1
 - `status`: draft
+- `task_id`: 자동 생성 (`YYYYMMDD-HHMMSS-<4자리 랜덤 hex>`, Bash `date +%Y%m%d-%H%M%S`-`openssl rand -hex 2`)
 - `goal`: Phase 0 JTBD의 Success 기준에서 추출
 - `constraints`: Phase 2 MUST NOT + Phase 1에서 발견한 기술 제약
 - `acceptance_criteria`: Phase 3의 모든 수락 기준
@@ -163,9 +164,37 @@ Write 도구로 `docs/harness/kickoff-summary.md`에 아래 Output Format 전체
 
 **생성 후 자체 검증:**
 - YAML 파싱 가능한가 (Read로 다시 읽어서 확인)
-- 필수 필드 9개 (version, status, goal, constraints, acceptance_criteria, out_of_scope, assumptions, risks, references) 모두 존재하는가
+- 필수 필드 10개 (version, status, task_id, goal, constraints, acceptance_criteria, out_of_scope, assumptions, risks, references) 모두 존재하는가
 - acceptance_criteria가 1개 이상인가
 - `docs/rules/seed_contract.md` 기준에 부합하는가
+
+#### Step 3.5: Plan Attack Gate (적대적 검증)
+
+seed.yaml 생성 후 자동 실행. 정책: [`rules/adversarial_review.md`](../../../rules/adversarial_review.md)
+
+```
+1. audit.jsonl에서 현재 task_id의 adversarial_plan_attack 이벤트 수를 세어 run_count 결정
+2. critic 에이전트 (opus) 호출:
+   - seed.yaml 전체를 입력으로 제공
+   - 구조적 공격 템플릿:
+     a) "이 goal이 달성 불가능한 이유 3가지"
+     b) "이 acceptance criteria가 불충분한 이유"
+     c) "이 scope에서 빠진 치명적 항목"
+   - 각 발견에 심각도 부여 (CRITICAL / HIGH / MEDIUM)
+   - CRITICAL 판정 기준: 3조건 동시 충족
+     (1) 요구사항 미충족/보안 취약점/데이터 손실 가능성
+     (2) 수정 없이 진행하면 후속 단계에서 반드시 실패
+     (3) 구체적 증거 제시 (seed.yaml 필드 인용)
+3. 결과를 docs/harness/plan-attack-report.md에 저장
+4. audit.jsonl에 append:
+   {"ts":"<ISO>","event":"adversarial_plan_attack","actor":"critic","meta":{"task_id":"<id>","run_count":<N>,"result":"<PASS|WARN|BLOCK>","findings":[...]}}
+5. 판정:
+   - run_count=1: WARN (결과를 사용자에게 표시, 진행 가능)
+   - run_count≥2: CRITICAL 발견 시 BLOCK → 사용자에게 보완 요구
+     - 사용자가 "그냥 진행해" → override 허용
+     - audit.jsonl에 adversarial_override 이벤트 기록
+   - CRITICAL 없으면: PASS
+```
 
 #### Step 4: Rubric 판정
 
@@ -235,7 +264,84 @@ override가 있었다면 추가:
 
 > **주의**: 기존 audit.jsonl 내용을 덮어쓰지 말고 반드시 append. Bash `echo '...' >> docs/harness/audit.jsonl` 또는 기존 내용을 Read한 후 합쳐서 Write.
 
-#### Step 8: 다음 단계 안내
+#### Step 8: README placeholder 채우기 (조건부)
+
+`/init`이 만든 placeholder를 kickoff 결과로 채운다. **사용자가 이미 손댔으면 건드리지 않는다**.
+
+**판별**:
+- `README.md`에 `<!-- claude-template-placeholder -->` 마커가 있으면 placeholder 상태 → 채움
+- 마커가 없으면 사용자가 수정한 것 → 건드리지 않고 Step 9로
+
+**채움 (placeholder인 경우)**:
+
+`README.md`을 아래 형식으로 덮어쓴다 (project name은 git remote 또는 디렉토리명에서 추출):
+
+```markdown
+**[English](README.en.md)**
+
+# <project-name>
+
+<JTBD.Success를 1-2문장으로 풀어쓴 한 줄 설명>
+
+## 목표
+
+<seed.yaml의 goal 필드>
+
+## 수락 기준
+
+- [ ] <AC 1>
+- [ ] <AC 2>
+- [ ] <AC 3>
+
+## 제약
+
+<seed.yaml의 constraints 항목들 — 없으면 섹션 생략>
+
+## 상태
+
+🚧 개발 중 — 자세한 컨텍스트는 `docs/harness/kickoff-summary.md` 참고.
+```
+
+`README.en.md`도 동일 구조로, 영문으로 덮어쓴다 (마커가 있는 경우에 한해):
+
+```markdown
+**[한국어](README.md)**
+
+# <project-name>
+
+<English one-liner from JTBD.Success>
+
+## Goal
+
+<goal>
+
+## Acceptance Criteria
+
+- [ ] <AC 1>
+...
+
+## Constraints
+
+<list — omit section if empty>
+
+## Status
+
+🚧 In development — see `docs/harness/kickoff-summary.md` for full context.
+```
+
+> 영문 번역은 한국어 원문을 자연스러운 영어로 옮긴다. 기계 번역체 금지.
+
+**audit 기록**:
+```
+{"ts":"<ISO>","event":"readme_initialized","actor":"assistant","meta":{"source":"kickoff"}}
+```
+
+마커가 없어 건너뛴 경우:
+```
+{"ts":"<ISO>","event":"readme_initialized","actor":"assistant","meta":{"skipped":"user_modified"}}
+```
+
+#### Step 9: 다음 단계 안내
 저장 완료 후 출력:
 > "Kickoff 완료. seed.yaml 생성됨 (status: draft). 구현을 시작하려면 `/startdev`를 사용하세요."
 
@@ -287,6 +393,7 @@ Next: `/startdev` or manual planning.
 | `docs/harness/kickoff-done` | Flag that kickoff completed | Created at end |
 | `docs/harness/kickoff-summary.md` | 사람 중심 요약 | Created at end |
 | `docs/harness/seed.yaml` | 하네스 중심 구조화 명세 (1급 입력) | Created at end |
+| `docs/harness/plan-attack-report.md` | 적대적 계획 검증 결과 | Created at Step 3.5 |
 | `docs/harness/rubric-report.md` | 명확도 4차원 판정 보고서 | Created at end |
 | `docs/harness/current-scope.md` | 훅 호환용 scope 정의 (파생물) | Created at end |
 | `docs/harness/audit.jsonl` | Append-only 감사 로그 | Appended throughout |

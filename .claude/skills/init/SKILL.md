@@ -65,9 +65,70 @@ cd <project-name>
 2. docs/glossary.yaml → 템플릿에서 복사하여 terms: [] 로 초기화
 
 3. docs/sum/ → 비움 (이전 세션 기록 제거)
+
+4. README 교체 (템플릿 README가 derived repo에 새지 않도록):
+   - README.md, README.en.md를 아래 placeholder로 덮어쓴다.
+   - `<!-- claude-template-placeholder -->` 마커는 `/kickoff`이 "아직 사용자가 손대지 않음"을 판별하는 데 사용된다.
 ```
 
-### Phase 3: 초기 커밋
+**README.md placeholder**:
+
+```markdown
+**[English](README.en.md)**
+
+# <project-name>
+
+> TODO — 프로젝트 설명. `/kickoff` 실행 시 kickoff 결과로 자동 채워집니다.
+
+<!-- claude-template-placeholder -->
+```
+
+**README.en.md placeholder**:
+
+```markdown
+**[한국어](README.md)**
+
+# <project-name>
+
+> TODO — Project description. Will be auto-filled when you run `/kickoff`.
+
+<!-- claude-template-placeholder -->
+```
+
+`<project-name>`은 Phase 0에서 추출한 이름으로 치환한다.
+
+### Phase 3: 하네스 메타 주입
+
+`source_remote`, `commit_sha`, `bootstrapped_at`을 `.claude/hooks/harness/harness-meta.json`에 주입.
+이 필드들이 있으면 SessionStart 훅이 원격 버전을 확인할 수 있고, 없으면(=템플릿 자체일 때) 스킵됨.
+
+```bash
+# 소스 레포 URL (SSH 형식 권장 — 비공개 접근 호환)
+SOURCE_REMOTE="git@github.com:rae-hugo-kim/claude.git"
+
+# 템플릿 현재 HEAD SHA — 사용자가 클론한 시점의 SHA
+COMMIT_SHA=$(git -C . rev-parse HEAD)
+
+# ISO 8601 UTC
+BOOTSTRAPPED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+```
+
+기존 `harness-meta.json`에 다음 필드 추가 (기존 `version`, `updated`, `description`은 유지):
+
+```json
+{
+  "version": "<existing>",
+  "updated": "<existing>",
+  "description": "<existing>",
+  "source_remote": "git@github.com:rae-hugo-kim/claude.git",
+  "commit_sha": "<COMMIT_SHA>",
+  "bootstrapped_at": "<BOOTSTRAPPED_AT>"
+}
+```
+
+Edit 툴로 JSON 파일 직접 수정 (마지막 `}` 앞에 세 필드 삽입).
+
+### Phase 4: 초기 커밋
 
 ```bash
 git add -A

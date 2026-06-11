@@ -54,10 +54,15 @@ Use concrete checks, not assumptions.
 - File: `.claude/hooks/harness/kickoff-detector.mjs`
 - Reads: `docs/harness/kickoff-done` (suppresses reminder if exists)
 
-### 6) Architect verification
+### 6) Architect verification + Completion Attack Gate
 
 - Provided by oh-my-claudecode `architect` agent
 - Not a file hook — invoked via agent delegation
+- **Extended by completion-attack gate** (see [`rules/adversarial_review.md`](adversarial_review.md)):
+  - architect (기존 역할 유지) + security-reviewer + test-engineer 병렬 실행
+  - 불일치 시 critic이 합의 판정
+  - CRITICAL 발견 시 블로킹
+- Output: `docs/harness/completion-attack-report.md`
 
 ## Startup Checklist (Run Before Claiming Compliance)
 

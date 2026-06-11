@@ -45,8 +45,9 @@ seed.yaml을 확인하고 유효성을 검증한다.
 1. Read docs/harness/seed.yaml
 2. 존재하면:
    - YAML 파싱 성공 확인
-   - 필수 필드 9개 존재 확인 (version, status, goal, constraints,
+   - 필수 필드 10개 존재 확인 (version, status, task_id, goal, constraints,
      acceptance_criteria, out_of_scope, assumptions, risks, references)
+   - task_id 형식 확인 (YYYYMMDD-HHMMSS-XXXX)
    - acceptance_criteria >= 1개 확인
    - status가 draft 또는 approved 확인
    - 실패 시: "seed.yaml이 유효하지 않습니다. /kickoff를 먼저 실행하세요." 출력 후 중단
@@ -121,6 +122,42 @@ Use `assets/test_plan_template.md` for full template.
 
 **Output test plan. Get user approval. Then proceed.**
 
+#### Step: Test Plan 저장 (MANDATORY)
+
+승인된 테스트 계획을 표준 경로에 저장한다.
+
+```
+1. Write 도구로 docs/harness/test-plan.md에 저장
+2. audit.jsonl에 append:
+   {"ts":"<ISO>","event":"test_plan_saved","actor":"assistant","meta":{"task_id":"<id>","path":"docs/harness/test-plan.md"}}
+```
+
+### ⛔ GATE 1.5: Test Attack Gate (적대적 검증)
+
+test-plan.md 저장 후 자동 실행. 정책: [`rules/adversarial_review.md`](../../../rules/adversarial_review.md)
+
+```
+1. test-engineer 에이전트 (sonnet) 호출:
+   - docs/harness/test-plan.md + docs/harness/seed.yaml을 입력으로 제공
+   - 구조적 공격 템플릿:
+     a) "이 테스트가 놓치는 실패 시나리오"
+     b) "이 엣지 케이스 목록에 빠진 것"
+     c) "이 테스트가 통과해도 버그가 남는 경우"
+   - 각 발견에 심각도 부여 (CRITICAL / HIGH / MEDIUM)
+   - CRITICAL 판정 기준: 3조건 동시 충족
+     (1) 요구사항 미충족/보안 취약점/데이터 손실 가능성
+     (2) 수정 없이 진행하면 후속 단계에서 반드시 실패
+     (3) 구체적 증거 제시 (test-plan.md 항목 또는 seed.yaml 필드 인용)
+2. 결과를 docs/harness/test-attack-report.md에 저장 (원본 test-plan.md와 분리)
+3. audit.jsonl에 append:
+   {"ts":"<ISO>","event":"adversarial_test_attack","actor":"test-engineer","meta":{"task_id":"<id>","run_count":<N>,"result":"<PASS|BLOCK>","findings":[...]}}
+4. 판정:
+   - CRITICAL 발견 → BLOCK (테스트 계획 보완 필요)
+     - 사용자가 "그냥 진행해" → override 허용
+     - audit.jsonl에 adversarial_override 이벤트 기록
+   - CRITICAL 없으면 → PASS → Phase 2 진행
+```
+
 ### Phase 2: RED - Write Failing Test
 
 ```
@@ -191,6 +228,35 @@ Before next feature:
 ```
 
 Use `references/implementation_checklist.md` for full checklist.
+
+### ⛔ GATE 3.5: Completion Attack Gate (적대적 검증 — Architect Verification 확장)
+
+GATE 3 통과 후 자동 실행. 기존 Mandatory Architect Verification을 **대체하지 않고 확장**한다.
+정책: [`rules/adversarial_review.md`](../../../rules/adversarial_review.md)
+
+```
+1. 병렬 에이전트 호출:
+   a) architect (opus): "요구사항(seed.yaml) 대비 누락된 것은?"
+      - acceptance_criteria 각 항목의 구현 증거 확인
+      - constraints 위반 여부 확인
+   b) security-reviewer (opus): "보안 관점에서 이 구현을 깨뜨릴 수 있는가?"
+      - 입력 검증, 인증/인가, 데이터 노출 점검
+   c) test-engineer (sonnet): "테스트 커버리지가 충분한가?"
+      - test-plan.md 대비 실제 구현된 테스트 비교
+      - 누락된 엣지 케이스 식별
+2. 각 발견에 심각도 부여 (CRITICAL / HIGH / MEDIUM)
+   - CRITICAL 판정 기준: 3조건 동시 충족 (adversarial_review.md 참조)
+3. 불일치 판정:
+   - 전원 PASS → PASS
+   - 에이전트 간 CRITICAL 판정이 엇갈리면 → critic (opus)이 합의 판정
+4. 결과를 docs/harness/completion-attack-report.md에 저장
+5. audit.jsonl에 append:
+   {"ts":"<ISO>","event":"adversarial_completion_attack","actor":"architect+security-reviewer+test-engineer","meta":{"task_id":"<id>","run_count":<N>,"result":"<PASS|BLOCK>","findings":[...]}}
+6. 판정:
+   - CRITICAL → BLOCK (수정 필요)
+     - 사용자 override → audit.jsonl에 adversarial_override 이벤트 기록
+   - CRITICAL 없으면 → PASS → 완료 선언 가능
+```
 
 ## Output Format
 

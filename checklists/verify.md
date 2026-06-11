@@ -6,6 +6,12 @@
 - [ ] Any skipped gates are listed with rationale and risk
 - [ ] Evidence is cited for version/command/API claims
 
+## Adversarial Verification
+
+- [ ] plan-attack gate passed (or override recorded in audit.jsonl)
+- [ ] test-attack gate passed (or override recorded)
+- [ ] completion-attack gate passed (or override recorded)
+
 
 ## Docs/Policy-Only Change Mode
 
