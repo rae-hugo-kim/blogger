@@ -1,6 +1,8 @@
 # Local archives
 docs/sum/
 docs/brainstorming/
+references/
+drafts/
 
 # Harness runtime state (OMP)
 .omp/harness-state/
