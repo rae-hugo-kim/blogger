@@ -7,6 +7,7 @@ This folder contains a layered agent policy set (entry + modules + checklists + 
 ## Quick Reference
 
 - Principles & examples: [`EXAMPLES.md`](EXAMPLES.md)
+- Content workflow (집필·퇴고·게시): [`docs/tone-guide.md`](docs/tone-guide.md) — 퇴고는 톤 가이드를 에이전트 컨텍스트로 로드해 대화형으로, 게시는 `scripts/normalize.py`(non-AI)
 
 ## Entry points
 

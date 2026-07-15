@@ -2,3 +2,4 @@
 {"ts":"2026-03-31T18:33:34+09:00","event":"seed_generated","actor":"assistant","meta":{"seed_path":"docs/harness/seed.yaml","status":"draft","version":1}}
 {"ts":"2026-03-31T18:33:34+09:00","event":"rubric_evaluated","actor":"assistant","meta":{"goal":"HIGH","constraints":"HIGH","success":"HIGH","context":"MEDIUM"}}
 {"ts":"2026-03-31T18:34:53+09:00","event":"startdev_started","actor":"assistant","meta":{"seed_version":1,"seed_status":"draft"}}
+{"ts": "2026-07-15T06:06:34.116626+00:00", "event": "seed_revised", "actor": "assistant", "meta": {"from_version": 1, "to_version": 2, "changed_fields": ["goal", "constraints", "acceptance_criteria", "out_of_scope", "assumptions", "risks", "references"], "reason": "사용자 명시 결정(2026-07-15): 원샷 CI 자동화는 파이프라인 목적이 아님 — refine AI 경로 퇴역, non-AI 게시 정규화(normalize.py) + 에이전트 대화형 퇴고로 전환. 근거: refine CI 3개월 무가동(1회=셋업 커밋), 산출물 전부 draft:true 미게재"}}

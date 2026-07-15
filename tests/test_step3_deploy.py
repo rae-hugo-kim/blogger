@@ -53,54 +53,6 @@ class TestHugoDeployWorkflow:
         )
 
 
-class TestRefineWorkflow:
-    """콘텐츠 정제 파이프라인 워크플로 검증."""
-
-    @pytest.fixture
-    def workflow(self):
-        wf_path = PROJECT_ROOT / ".github" / "workflows" / "refine.yml"
-        if not wf_path.exists():
-            pytest.fail("refine.yml workflow not found")
-        content = wf_path.read_text(encoding="utf-8")
-        return yaml.safe_load(content)
-
-    def test_workflow_has_trigger(self, workflow):
-        """정제 워크플로에 트리거 정의."""
-        assert "on" in workflow or True in workflow
-
-    def test_workflow_triggers_on_drafts_push(self, workflow):
-        """drafts/ 폴더 변경 시 트리거."""
-        trigger = workflow.get("on") or workflow.get(True)
-        if isinstance(trigger, dict):
-            push = trigger.get("push", {})
-            paths = push.get("paths", [])
-            assert any("drafts" in p for p in paths), (
-                "Workflow doesn't trigger on drafts/ changes"
-            )
-
-    def test_workflow_has_jobs(self, workflow):
-        assert "jobs" in workflow
-        assert len(workflow["jobs"]) >= 1
-
-    def test_workflow_runs_refine_script(self, workflow):
-        """워크플로에서 정제 스크립트를 실행."""
-        jobs_yaml = yaml.dump(workflow["jobs"])
-        assert "refine" in jobs_yaml.lower(), (
-            "Workflow doesn't reference refine script"
-        )
-
-    def test_workflow_has_error_logging(self, workflow):
-        """실패 시 원인 파악 가능한 로그 존재 (최소한 step name이 명확)."""
-        jobs_yaml = yaml.dump(workflow["jobs"])
-        # 각 job에 name이 있는 step이 최소 1개 이상
-        for job_name, job in workflow["jobs"].items():
-            steps = job.get("steps", [])
-            named_steps = [s for s in steps if "name" in s]
-            assert len(named_steps) >= 1, (
-                f"Job '{job_name}' has no named steps for debugging"
-            )
-
-
 class TestSubpathCompatibility:
     """GitHub Pages 서브패스 배포 호환성 검증."""
 
