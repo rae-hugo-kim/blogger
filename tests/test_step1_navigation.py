@@ -88,3 +88,41 @@ class TestSlugGeneration:
             assert (post_dir / "index.html").exists(), (
                 f"Post {slug} has no index.html"
             )
+
+
+class TestHeaderMenu:
+    """헤더 메뉴 링크 검증 — GitHub Pages 서브패스(/blogger/) 회귀 방지.
+
+    hugo.yaml 메뉴를 `url:`로 정의하면 root-relative로 출력되어 서브패스가
+    누락된다(실제 발생 회귀). `pageRef:`만 baseURL을 관통한다.
+    """
+
+    MENU_ITEMS = ["글", "이세계표류기", "에세이", "태그"]
+
+    def test_menu_hrefs_include_base_subpath(self, hugo_build):
+        """홈 헤더의 메뉴 4종 href가 모두 /blogger/ 프리픽스를 포함."""
+        assert hugo_build["returncode"] == 0
+        html = _read_html(hugo_build["public_dir"] / "index.html")
+        anchors = re.findall(r"<a\b[^>]*>", html)
+        for label in self.MENU_ITEMS:
+            # 속성 순서 독립: 같은 <a> 태그 안에서 aria-label과 href를 따로 추출
+            tag = next(
+                (a for a in anchors
+                 if re.search(r'aria-label="?' + re.escape(label) + r'"?[\s>]', a)),
+                None,
+            )
+            assert tag, f"Menu item '{label}' not rendered in header"
+            href = re.search(r'href="?([^"\s>]+)"?', tag)
+            assert href and href.group(1).startswith("/blogger/"), (
+                f"Menu '{label}' href '{href.group(1) if href else None}' misses /blogger/ subpath — "
+                "use pageRef (not url) in hugo.yaml menus"
+            )
+
+    def test_series_term_page_lists_opener(self, hugo_build):
+        """시리즈 페이지(/series/이세계표류기/)가 존재하고 서장을 나열."""
+        assert hugo_build["returncode"] == 0
+        term = hugo_build["public_dir"] / "series" / "이세계표류기" / "index.html"
+        assert term.exists(), "series term page not generated"
+        assert "이세계 표류기: 서장" in _read_html(term), (
+            "series page does not list the opener post"
+        )

@@ -15,6 +15,24 @@ outputs:
 taxonomies:
   tag: tags
   category: categories
+  series: series
+
+# 메뉴 정책: 글이 있는 카테고리/시리즈만 노출 (빈 taxonomy 페이지는 404).
+# 리딩노트·작업노트·특허에 첫 글이 실리면 해당 링크를 추가할 것.
+menus:
+  main:
+    - name: 글
+      pageRef: posts
+      weight: 10
+    - name: 이세계표류기
+      pageRef: /series/이세계표류기
+      weight: 20
+    - name: 에세이
+      pageRef: /categories/에세이
+      weight: 30
+    - name: 태그
+      pageRef: /tags
+      weight: 40
 
 params:
   colorScheme: "editorial"

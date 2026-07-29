@@ -5,6 +5,8 @@ draft: false
 description: "나는 개발자가 되어가고 있다"
 tags: ["agentic-coding", "vibe-coding", "회고"]
 categories: ["에세이"]
+series: ["이세계표류기"]
+series_order: 1
 ---
 
 아직 나는 나의 사회적 역할을 무엇이라고 정의해야 할지 잘 모르겠다.
