@@ -98,6 +98,7 @@ PATHS=(
   "EXAMPLES.md"
   ".omp/extensions/harness"
   ".githooks/post-commit"
+  ".githooks/pre-push"
   "scripts/harness-version-bump.sh"
   "scripts/harness-sync.sh"
   "scripts/harness-audit.sh"
@@ -115,6 +116,8 @@ PATHS=(
   ".omp/skills/brainstorm"
   ".omp/skills/design-mockup"
   ".omp/skills/grepai-search"
+  ".omp/skills/gh-loop"
+  ".omp/skills/gh-fanout"
   ".omp/agents"
 )
 

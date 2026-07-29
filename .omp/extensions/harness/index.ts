@@ -3,13 +3,19 @@
 // lived in `.claude/settings.json` (PreToolUse/PostToolUse/... hooks).
 //
 // Event mapping (Claude Code -> OMP):
-//   PreToolUse  Edit|Write   -> tool_call  edit|write|ast_edit  : context-gate (blocking)
+//   PreToolUse  Edit|Write   -> tool_call  edit|write            : context-gate (blocking; an
+//     xd://ast_edit device write pre-gates the paths named in its JSON body — read-before-edit holds)
 //   PreToolUse  Bash         -> tool_call  bash                 : destructive-guard (advisory), commit-gates (blocking)
 //   PreToolUse  mcp__*       -> tool_call  mcp__*               : mcp-gate (advisory)
 //   PostToolUse Read         -> tool_result read                : read-tracker
+//   PostToolUse Grep         -> tool_result grep                 : read-tracker (batched; search-minted [path#TAG] anchors satisfy context-gate)
 //   PostToolUse Bash         -> tool_result bash (ok)           : backpressure-tracker
+//   PostToolUse Bash (ok git commit) -> tool_result bash        : harness-version-check (1h window; drift appended to result)
+//   BeforeAgentStart -> before_agent_start                      : harness-version-check (1h window; agent-facing reminder) + kickoff-detector
 //   PostToolUseFailure Bash  -> tool_result bash (isError)      : backpressure-failure-tracker
-//   PostToolUse Edit|Write   -> tool_result edit|write|ast_edit : write-tracker + backpressure-invalidator
+//   PostToolUse Edit|Write   -> tool_result edit|write           : mutationRoute -> write-tracker + backpressure-invalidator + mermaid-check
+//     (v17 xd:// dispatches ride `write`: ast_edit preview only invalidates backpressure, the REAL
+//      apply is tracked via the xd://resolve dispatch envelope; xd grep/ast_grep results record read anchors)
 //   UserPromptSubmit         -> before_agent_start              : kickoff-detector (message injection)
 //   SessionStart             -> session_start                   : harness-version-check
 //
@@ -20,26 +26,30 @@
 // Requires `node` on PATH (gates are spawned with node, NOT process.execPath —
 // inside OMP, process.execPath is the omp binary itself).
 //
+// Exception: the mermaid check (mermaid-check.ts) runs IN-PROCESS, not as a
+// spawned gate — it needs omp's bundled @oh-my-pi/pi-utils parser, which only
+// resolves inside the compiled omp binary. It appends a warning chunk to the
+// tool result (fail-open, never blocks).
+//
 // Infra failures (node missing, gate crash, timeout) fail OPEN with a loud
 // warning, matching the original per-hook fail-open behavior. Only an explicit
 // gate exit code 2 blocks a tool call.
 
 import { spawn } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isGitCommit } from "./gates/git-commit-detect.mjs";
+import { mutationCallTargets, mutationRoute, readTarget, searchTrackTargets } from "./gates/read-path.mjs";
+import { checkMermaidFile, MERMAID_SUPPORTED } from "./mermaid-check";
 
 const GATES_DIR = join(dirname(fileURLToPath(import.meta.url)), "gates");
 const GATE_TIMEOUT_MS = 3_000;
-const COMMIT_GATES_TIMEOUT_MS = 10_000;
+const COMMIT_GATES_TIMEOUT_MS = 15_000;
 const VERSION_CHECK_TIMEOUT_MS = 15_000;
 
-/** Tools that create or mutate files (Claude Code's Edit|Write matcher). */
-const EDIT_TOOL_NAMES = new Set(["edit", "write", "ast_edit"]);
-/** `[path#TAG]` headers inside a hashline `edit` patch. */
-const HASHLINE_HEADER = /^\[([^\]\n#]+)#[0-9A-Fa-f]{4,}\]\s*$/gm;
-/** Trailing read selectors (`:50-100`, `:raw`, ...) appended to `read` paths. */
-const READ_SELECTOR = /:(?:raw|conflicts|\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*)(?::raw)?$/;
+/** Tools that create or mutate files (Claude Code's Edit|Write matcher). v17 moved
+ *  ast_edit behind the xd:// device transport, so it arrives as `write` here. */
+const isEditToolName = (name: string): boolean => name === "edit" || name === "write";
 
 interface ContentChunk {
 	type: string;
@@ -55,7 +65,7 @@ interface ToolCallEvent {
 interface ToolResultEvent extends ToolCallEvent {
 	content?: ContentChunk[];
 	isError?: boolean;
-	details?: { exitCode?: number } & Record<string, unknown>;
+	details?: { exitCode?: number; applied?: boolean } & Record<string, unknown>;
 }
 
 /**
@@ -73,6 +83,11 @@ function bashRunFailed(event: ToolResultEvent): boolean {
 interface ToolCallBlock {
 	block: true;
 	reason: string;
+}
+
+/** tool_result middleware patch: returned `content` replaces the original. */
+interface ToolResultPatch {
+	content: ContentChunk[];
 }
 
 interface AgentStartMessage {
@@ -114,16 +129,20 @@ interface HarnessExtensionApi {
 	setLabel?(label: string): void;
 	logger?: HarnessLogger;
 	on(event: "tool_call", handler: (event: ToolCallEvent, ctx: HarnessCtx) => Promise<ToolCallBlock | undefined>): void;
-	on(event: "tool_result", handler: (event: ToolResultEvent, ctx: HarnessCtx) => Promise<void>): void;
+	on(event: "tool_result", handler: (event: ToolResultEvent, ctx: HarnessCtx) => Promise<ToolResultPatch | undefined>): void;
 	on(event: "before_agent_start", handler: (event: unknown, ctx: HarnessCtx) => Promise<AgentStartMessage | undefined>): void;
 	on(event: "session_start", handler: (event: unknown, ctx: HarnessCtx) => Promise<void>): void;
 }
+
+/** Freshness window for mid-session drift rechecks (turn start, post-commit). */
+const DRIFT_RECHECK_MAX_AGE_MS = 60 * 60 * 1000;
 
 /** stdin payload in the shape the Claude Code hook protocol fed the gates. */
 interface GatePayload {
 	tool_name?: string;
 	tool_input?: Record<string, unknown>;
 	prompt?: string;
+	max_age_ms?: number;
 	session_state: { cwd: string };
 }
 
@@ -172,40 +191,6 @@ function textChunks(content: unknown): string {
 	return text;
 }
 
-/** Absolute file targets a mutating tool call touches. */
-function editTargets(toolName: string, input: Record<string, unknown> | undefined, cwd: string): string[] {
-	if (!input) return [];
-	if (toolName === "write") {
-		const path = input.path ?? input.file_path ?? input.filePath;
-		return typeof path === "string" && path ? [resolve(cwd, path)] : [];
-	}
-	if (toolName === "edit") {
-		const targets = new Set<string>();
-		// Direct path field (find/replace-style edit tools)...
-		const direct = input.path ?? input.file_path ?? input.filePath;
-		if (typeof direct === "string" && direct) targets.add(resolve(cwd, direct));
-		// ...and hashline patch headers `[path#TAG]` (hashline-style edit tools).
-		const patch = typeof input.input === "string" ? input.input : "";
-		for (const match of patch.matchAll(HASHLINE_HEADER)) {
-			targets.add(resolve(cwd, match[1]));
-		}
-		return [...targets];
-	}
-	if (toolName === "ast_edit") {
-		const paths = Array.isArray(input.paths) ? input.paths : [];
-		// Globs pass through unchanged: context-gate allows non-existent paths.
-		return paths.filter((p): p is string => typeof p === "string" && p.length > 0).map((p) => resolve(cwd, p));
-	}
-	return [];
-}
-
-/** Local file path a `read` call targets, selector stripped; "" for URLs/internal URIs. */
-function readTarget(input: Record<string, unknown> | undefined, cwd: string): string {
-	const raw = input?.path;
-	if (typeof raw !== "string" || !raw || raw.includes("://")) return "";
-	return resolve(cwd, raw.replace(READ_SELECTOR, ""));
-}
-
 function latestUserText(event: unknown, ctx: HarnessCtx): string {
 	const evt = event as { prompt?: unknown; text?: unknown } | undefined;
 	if (typeof evt?.prompt === "string" && evt.prompt) return evt.prompt;
@@ -219,6 +204,18 @@ function latestUserText(event: unknown, ctx: HarnessCtx): string {
 		if (text) return text;
 	}
 	return "";
+}
+
+/** Append a HARNESS WARNING chunk when any mermaid block failed to parse. */
+function mermaidResultPatch(event: ToolResultEvent, problems: string[]): ToolResultPatch | undefined {
+	if (!problems.length) return undefined;
+	const text = [
+		"HARNESS WARNING: invalid mermaid diagram(s) in this edit — the OMP bundled parser rejected:",
+		...problems.map((problem) => `  - ${problem}`),
+		`Supported types: ${MERMAID_SUPPORTED}.`,
+		"Fix the block(s) and re-save; docs are rendered by Obsidian/GitHub and the OMP TUI.",
+	].join("\n");
+	return { content: [...(event.content ?? []), { type: "text", text }] };
 }
 
 export default function harness(pi: HarnessExtensionApi): void {
@@ -245,7 +242,7 @@ export default function harness(pi: HarnessExtensionApi): void {
 				const payload: GatePayload = { tool_name: "Bash", tool_input: { command }, session_state };
 				const guard = await runGate("destructive-guard.mjs", payload);
 				surface(ctx, guard, "destructive-guard");
-				// Cheap in-process pre-check; commit-gates spawns 3 child gates on a real commit.
+				// Cheap in-process pre-check; commit-gates spawns 4 child gates on a real commit.
 				if (isGitCommit(command)) {
 					const gates = await runGate("commit-gates.mjs", payload, COMMIT_GATES_TIMEOUT_MS);
 					if (gates.status === 2) return { block: true, reason: gates.stderr.trim() || "HARNESS BLOCK: commit gate failed." };
@@ -253,8 +250,8 @@ export default function harness(pi: HarnessExtensionApi): void {
 				}
 				return;
 			}
-			if (EDIT_TOOL_NAMES.has(event.toolName)) {
-				for (const filePath of editTargets(event.toolName, event.input, ctx.cwd)) {
+			if (isEditToolName(event.toolName)) {
+				for (const filePath of mutationCallTargets(event.toolName, event.input, ctx.cwd)) {
 					const run = await runGate("context-gate.mjs", { tool_name: "Edit", tool_input: { file_path: filePath }, session_state });
 					if (run.status === 2) return { block: true, reason: run.stderr.trim() || `HARNESS BLOCK: read '${filePath}' before editing it.` };
 					surface(ctx, run, "context-gate");
@@ -280,20 +277,70 @@ export default function harness(pi: HarnessExtensionApi): void {
 				if (filePath) await runGate("read-tracker.mjs", { tool_name: "Read", tool_input: { file_path: filePath }, session_state });
 				return;
 			}
+			// grep/ast_grep mint per-file [path#TAG] edit anchors backed by whole-file
+			// snapshots, and OMP's edit tool accepts them ("from your latest read/search") —
+			// record the anchored files as read or context-gate false-blocks a grep-anchored
+			// edit (live-reproduced on omp 16.3.12, 2026-07-09). One batched spawn per result.
+			if (event.toolName === "grep" && !event.isError) {
+				const files = searchTrackTargets(event.details, textChunks(event.content), ctx.cwd);
+				if (files.length) await runGate("read-tracker.mjs", { tool_name: "Read", tool_input: { file_paths: files }, session_state });
+				return;
+			}
 			if (event.toolName === "bash") {
 				const command = String(event.input?.command ?? "");
 				if (!command) return;
 				const payload: GatePayload = { tool_name: "Bash", tool_input: { command }, session_state };
 				const tracker = bashRunFailed(event) ? "backpressure-failure-tracker.mjs" : "backpressure-tracker.mjs";
 				await runGate(tracker, payload);
+				await runGate("breadcrumb-tracker.mjs", { tool_name: "Bash", tool_input: { command, failed: bashRunFailed(event) }, session_state });
+				// Post-commit drift recheck (1h window): a bump published mid-session surfaces at
+				// the next commit. Appended to the tool result so the AGENT sees it — surface()/
+				// ui.notify is human-facing only. Non-blocking by design: a stale harness never
+				// invalidates the commit itself (blocking here would force a remote-wins sync
+				// onto a dirty tree — the exact hazard we avoid).
+				if (isGitCommit(command) && !bashRunFailed(event)) {
+					const drift = await runGate("harness-version-check.mjs", { session_state, max_age_ms: DRIFT_RECHECK_MAX_AGE_MS }, VERSION_CHECK_TIMEOUT_MS);
+					const note = drift.stdout.trim();
+					if (note) return { content: [...(event.content ?? []), { type: "text", text: note }] };
+				}
 				return;
 			}
-			if (EDIT_TOOL_NAMES.has(event.toolName) && !event.isError) {
-				for (const filePath of editTargets(event.toolName, event.input, ctx.cwd)) {
+			if (isEditToolName(event.toolName) && !event.isError) {
+				// v17 xd:// device dispatches ride `write` (details.xdev envelope); mutationRoute
+				// classifies them BEFORE plain file targets — structurally fixing the ordering that
+				// let device writes fall into the generic branch and track only the bogus device
+				// path (live-reproduced on omp 17.0.1, 2026-07-16; contract tests: xdev-dispatch).
+				const route = mutationRoute(event.toolName, event.input, event.details, textChunks(event.content), ctx.cwd);
+				// xd grep/ast_grep results mint [path#TAG] edit anchors exactly like the top-level
+				// grep tool — record them as read or context-gate false-blocks an anchored edit.
+				if (route.kind === "read-anchors") {
+					if (route.files.length) await runGate("read-tracker.mjs", { tool_name: "Read", tool_input: { file_paths: route.files }, session_state });
+					return;
+				}
+				// Staged ast_edit preview: backpressure-invalidator as a BEST-EFFORT early fallback
+				// (from the device args' paths). The breadcrumb (phantom until apply, false on
+				// discard) and write-tracker are deferred to the xd://resolve apply below.
+				if (route.kind === "preview") {
+					for (const filePath of route.files) {
+						await runGate("backpressure-invalidator.mjs", { tool_name: "Write", tool_input: { file_path: filePath }, session_state });
+					}
+					return;
+				}
+				// Other xd devices (generate_image, MCP tools, …) touch no local files.
+				if (route.kind === "device") return;
+				// "apply" (the REAL write of a staged preview, resolved from the dispatch envelope's
+				// inner file list) and "files" (plain write/edit) share full tracking.
+				const mermaidProblems: string[] = [];
+				for (const filePath of route.files) {
 					const payload: GatePayload = { tool_name: "Write", tool_input: { file_path: filePath }, session_state };
 					await runGate("write-tracker.mjs", payload);
 					await runGate("backpressure-invalidator.mjs", payload);
+					await runGate("breadcrumb-tracker.mjs", payload);
+					for (const problem of await checkMermaidFile(filePath)) {
+						mermaidProblems.push(`${relative(ctx.cwd, filePath)}: ${problem}`);
+					}
 				}
+				return mermaidResultPatch(event, mermaidProblems);
 			}
 		} catch (err) {
 			pi.logger?.warn?.(`HARNESS WARNING: tool_result adapter error: ${err instanceof Error ? err.message : String(err)}`);
@@ -302,26 +349,42 @@ export default function harness(pi: HarnessExtensionApi): void {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		try {
+			const session_state = { cwd: ctx.cwd };
+			const notes: string[] = [];
+			// Turn-start drift reminder (1h window): cache hits are a fast local read; misses
+			// probe ls-remote at most once per window, and failed probes back off via the
+			// gate's failure marker. Returned as a message so the AGENT acts on it.
+			const drift = await runGate("harness-version-check.mjs", { session_state, max_age_ms: DRIFT_RECHECK_MAX_AGE_MS }, VERSION_CHECK_TIMEOUT_MS);
+			const driftNote = drift.stdout.trim();
+			if (driftNote) notes.push(driftNote);
 			const prompt = latestUserText(event, ctx);
-			if (!prompt) return;
-			const run = await runGate("kickoff-detector.mjs", { prompt, session_state: { cwd: ctx.cwd } });
-			const note = run.stdout.trim();
-			if (note) return { message: { customType: "harness-reminder", content: note, display: true } };
+			if (prompt) {
+				const run = await runGate("kickoff-detector.mjs", { prompt, session_state });
+				const note = run.stdout.trim();
+				if (note) notes.push(note);
+			}
+			if (notes.length) return { message: { customType: "harness-reminder", content: notes.join("\n\n"), display: true } };
 		} catch (err) {
-			pi.logger?.warn?.(`HARNESS WARNING: kickoff-detector adapter error: ${err instanceof Error ? err.message : String(err)}`);
+			pi.logger?.warn?.(`HARNESS WARNING: before_agent_start adapter error: ${err instanceof Error ? err.message : String(err)}`);
 		}
 		return;
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		const session_state = { cwd: ctx.cwd };
 		try {
-			const run = await runGate("harness-version-check.mjs", { session_state: { cwd: ctx.cwd } }, VERSION_CHECK_TIMEOUT_MS);
+			const run = await runGate("harness-version-check.mjs", { session_state }, VERSION_CHECK_TIMEOUT_MS);
 			const note = `${run.stdout}\n${run.stderr}`.trim();
-			if (!note) return;
-			if (ctx.hasUI && ctx.ui?.notify) ctx.ui.notify(note, "warning");
-			else pi.logger?.info?.(note);
+			if (note) { if (ctx.hasUI && ctx.ui?.notify) ctx.ui.notify(note, "warning"); else pi.logger?.info?.(note); }
 		} catch {
 			// Version check is best-effort advisory; stay silent on infra errors.
+		}
+		try {
+			const run = await runGate("breadcrumb-surface.mjs", { session_state });
+			const note = run.stdout.trim();
+			if (note) { if (ctx.hasUI && ctx.ui?.notify) ctx.ui.notify(note, "info"); else pi.logger?.info?.(note); }
+		} catch {
+			// Surface is best-effort; prior summaries are a nicety, not a gate.
 		}
 	});
 }

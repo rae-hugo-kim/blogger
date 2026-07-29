@@ -29,8 +29,11 @@ This repo ships its own enforcement layer as an **OMP extension**. The following
 | Destructive command warnings | `destructive-guard` | `.omp/extensions/harness/gates/` |
 | New work detection | `kickoff-detector` | `.omp/extensions/harness/gates/` |
 | Code changes review/verification | `reviewer` / `verifier` agents via the `task` tool | `.omp/agents/` |
+| Session breadcrumb capture (non-blocking) | `breadcrumb-tracker` + `breadcrumb-surface` | `.omp/extensions/harness/gates/` |
+| Mermaid syntax in saved `.md` (non-blocking) | in-process `mermaid-check` via OMP bundled parser | `.omp/extensions/harness/mermaid-check.ts` |
+| Local archive leak prevention (commit BLOCK / push BLOCK) | `archive-guard` (via `commit-gates`) + `.githooks/pre-push` + `compush`/`compr` pre-push checks | `.omp/extensions/harness/gates/`, `.githooks/` |
 
-All gates are wired by the extension `.omp/extensions/harness/index.ts` (OMP events: `tool_call`, `tool_result`, `before_agent_start`, `session_start`). Gates require `node` on PATH.
+All gates are wired by the extension `.omp/extensions/harness/index.ts` (OMP events: `tool_call`, `tool_result`, `before_agent_start`, `session_start`). Gates require `node` on PATH (the in-process mermaid check does not).
 
 OMC relationship: OMC agents and skills installed under `~/.claude` are discovered by OMP and usable via the `task` tool; OMC's hook automation (magic keywords, system-reminder injection) does **not** run under OMP — this extension replaces it for repo-level gating.
 
@@ -87,6 +90,7 @@ Harness verification contract details: [`rules/harness_integration_contract.md`]
 - **Docs/policy-only mode**: for pure markdown/policy/template edits, follow the docs-only verification path in `rules/verification_tests_and_evals.md` and include its required evidence format.
 - **Evidence**: cite concrete evidence for key decisions (file paths + excerpts or command output).
 - **Reference doc sync**: in the same PR, update `claudedocs/CLAUDEKR.md` (Korean mirror of this file) or explicitly mark it as stale.
+- **Scope self-detection (L1)**: during a session, when a scope-add / fix / new requirement appears, propose AC and either silent-append (testable + unambiguous) or ask on a material fidelity gap (push→pull) — never let a code change proceed with no tracking AC ([`docs/rules/scope_self_detect_policy.md`](docs/rules/scope_self_detect_policy.md); mechanical backstop = `acceptance-gate`).
 
 ## Completion Contract (MUST)
 
@@ -117,7 +121,7 @@ If you cannot comply with any MUST:
 
 - See [`rules/agent_routing.md`](rules/agent_routing.md) for full routing rules
   (incl. the 2026-06 retirement of the unused MCP delegation matrix).
-- **reviewer**: SHOULD delegate for code changes ≥10 lines or logic changes. 3-pass adversarial (self + GPT adversary + OMC).
+- **reviewer**: SHOULD delegate for **high/critical-risk** changes (per `risk-assess`: security/auth/migration files touched, or >100 changed lines of code). Low/medium-risk changes need self-review only — no extra spawn. 3-pass adversarial (self + heterogeneous adversary + code-reviewer, all three defined in `.omp/agents/` — no external plugin required; the reviewer nest-spawns Pass 2/3 via its `spawns:` frontmatter). This matches what `review-gate` enforces: machine evidence is a strict JSON tuple sidecar (`docs/reviews/review-<ts>.json`, `["omp-review-evidence/v1", <hash>, <verdict>, <models|null>, <human|null>, <reviewer>]` — the gate never parses markdown), with second-perspective evidence (a MEASURED >=2-family models array, or a human identity) required only for high/critical commits; the only bypass is an audited override (`docs/harness/review-skip` with `["omp-review-override/v1", <reason>, <approved_by>, <hash>]`, recorded to `docs/harness/audit.jsonl` and consumed). **Dispatch preflight (MUST)**: before spawning the reviewer, verify your own depth and `task`-tool availability — the reviewer needs the `task` tool for Pass 2/3 (recursion cap: depth <= 1), and a session without the `task` tool must not run the review in-session (entry-point priority: `rules/agent_routing.md`).
 - **verifier**: MUST delegate before claiming task completion when AC exists. The `task` spawn is non-blocking (async job delivery) — **spawning is not completing; declare done only after the verifier's verdict has actually arrived.**
 
 ## Linked Modules
@@ -142,11 +146,14 @@ If you cannot comply with any MUST:
 - Learning policy: [`rules/learning_policy.md`](rules/learning_policy.md)
 - Coding standards: [`rules/coding_standards.md`](rules/coding_standards.md)
 - Documentation standards: [`rules/doc_standards.md`](rules/doc_standards.md)
+- Writing style (human-facing tone): [`rules/writing_style.md`](rules/writing_style.md)
 - Agent security: [`rules/agent_security.md`](rules/agent_security.md)
 - Hook recipes: [`rules/hook_recipes.md`](rules/hook_recipes.md)
 - Session persistence: [`rules/session_persistence.md`](rules/session_persistence.md)
 - Adversarial review: [`rules/adversarial_review.md`](rules/adversarial_review.md)
 - Agent routing: [`rules/agent_routing.md`](rules/agent_routing.md)
+- Artifact roles (seed/scope/audit 3-tier): [`docs/rules/artifact_roles_contract.md`](docs/rules/artifact_roles_contract.md)
+- Scope self-detect policy (L1): [`docs/rules/scope_self_detect_policy.md`](docs/rules/scope_self_detect_policy.md)
 
 ## Checklists (Use as needed)
 

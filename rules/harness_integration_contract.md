@@ -19,9 +19,10 @@ The following controls are required when harness is available:
 4. `backpressure-gate` — blocks commits if build/test/lint failed (`tool_call`: bash, via commit-gates)
 5. `backpressure-tracker` — records build/test/lint successes (`tool_result`: bash, exit 0); `backpressure-failure-tracker` records failures (`tool_result`: bash with `isError` or non-zero `details.exitCode`)
 6. `kickoff-detector` — reminds about kickoff for new work (`before_agent_start`, message injection)
-7. Architect verification — independent completion verification (oh-my-claudecode agent, via OMP's task tool)
+7. `archive-guard` — blocks commits that would ingest local-archive files (`docs/sum`, `docs/reviews`, `docs/brainstorming`); warns on legacy-tracked ones (`tool_call`: bash, via commit-gates). The push-boundary backstop lives in `.githooks/pre-push` (blocks when archives are TRACKED) and the `compush`/`compr` pre-push checks; narrative backup is the private sum-vault (see `rules/doc_standards.md`).
+8. Architect verification — independent completion verification (oh-my-claudecode agent, via OMP's task tool)
 
-> The commit-only gates — `acceptance-gate`, `backpressure-gate`, and `review-gate` — are registered through a single dispatcher `commit-gates.mjs` (`tool_call`: bash). The extension imports `./gates/git-commit-detect.mjs` and runs one in-process `isGitCommit` check per bash command, only spawning the dispatcher on an actual commit (zero spawns on the common non-commit path). On a commit it runs all three in order and blocks if ANY blocks (each child gets a ~3s budget; a gate that fails to run cleanly is skipped with a loud `HARNESS WARNING`). `destructive-guard` stays a separate `tool_call`: bash gate (it scans every command, not just commits).
+> The commit-only gates — `acceptance-gate`, `backpressure-gate`, `review-gate`, and `archive-guard` — are registered through a single dispatcher `commit-gates.mjs` (`tool_call`: bash). The extension imports `./gates/git-commit-detect.mjs` and runs one in-process `isGitCommit` check per bash command, only spawning the dispatcher on an actual commit (zero spawns on the common non-commit path). On a commit it runs all four in order and blocks if ANY blocks (each child gets a ~3s budget within the dispatcher's 15s; a gate that fails to run cleanly — crash, timeout, or spawn failure — BLOCKS the commit fail-closed, with a `HARNESS BLOCK` naming the gate, the failure, and how to run it standalone for debugging: a skipped gate would be a review bypass). `destructive-guard` stays a separate `tool_call`: bash gate (it scans every command, not just commits).
 
 > Scope drift is no longer gate-enforced (scope-gate retired). It is handled by the AGENTS.md "Surgical Changes" rule + PR review; `out_of_scope` in seed.yaml is advisory prose the agent reads.
 
@@ -31,8 +32,8 @@ The following controls are required when harness is available:
 
 Not every `.mjs` in `.omp/extensions/harness/gates/` is invoked from `index.ts` via a direct `runGate(...)` call. Two groups are intentionally indirect:
 
-- **Helper modules** (imported by other gates or by the extension, never spawned themselves): `git-commit-detect` (shared `isGitCommit` detector imported by `index.ts` and used by `commit-gates`, `acceptance-gate`, `backpressure-gate`, `review-gate`), `risk-assess` (risk classification imported by `review-gate` and `backpressure-gate`), `backpressure-patterns` (shared by `backpressure-tracker` and `backpressure-failure-tracker`).
-- **Standalone advisory / lifecycle gates** (wired in `index.ts`, non-blocking): `destructive-guard` (`tool_call`: bash, scans every command), `mcp-gate` (advisory notice on `mcp__*` tool calls), `backpressure-invalidator` (`tool_result`: edit|write|ast_edit, marks state stale), `harness-version-check` (`session_start`).
+- **Helper modules** (imported by other gates or by the extension, never spawned themselves): `git-commit-detect` (shared `isGitCommit` detector imported by `index.ts` and used by `commit-gates`, `acceptance-gate`, `backpressure-gate`, `review-gate`), `risk-assess` (risk classification imported by `review-gate` and `backpressure-gate`), `backpressure-patterns` (shared by `backpressure-tracker` and `backpressure-failure-tracker`), `read-path` (imported by `index.ts` — 라우팅·타깃 추출 순수 함수 층: `readTarget` strips a read selector / filters URLs so read-tracker logs the bare path context-gate compares against; `editTargets`/`mutationCallTargets` resolve mutating-call gate targets incl. the paths inside an `xd://ast_edit` dispatch body; `mutationRoute` classifies v17 xd:// device dispatches on `write` results — URI-scheme targets never enter the ledgers; `resolvedAstEditFiles` extracts the written files from an `xd://resolve` apply envelope).
+- **Standalone advisory / lifecycle gates** (wired in `index.ts`, non-blocking): `destructive-guard` (`tool_call`: bash, scans every command), `mcp-gate` (advisory notice on `mcp__*` tool calls), `backpressure-invalidator` (`tool_result`: edit/write; for a staged `ast_edit` (v17 xd:// device dispatch) it runs on the PREVIEW as a safety fallback AND on the real `xd://resolve` apply — marks verification state stale), `harness-version-check` (`session_start` with the 24h default window; ALSO re-run agent-facing with a 1h `max_age_ms` window at `before_agent_start` — merged into the `harness-reminder` message — and after a successful `git commit` on `tool_result`, where drift text is appended to the commit's tool result. Failed probes write a short-lived failure marker so frequent callers back off instead of re-stalling on a dead network).
 
 `scripts/docs-drift` audits this layout. Its orphan check is **reachability-based**: a gate is "live" if it is referenced from `.omp/extensions/harness/index.ts` (a `runGate(...)` call or import) **or** reachable from a referenced gate via an import / spawn reference (a quoted `*.mjs` literal that resolves to a real gate file). The delegated gates and the helper modules above are therefore live, not orphans. Only a gate that is unreferenced **and** unreachable from the extension entry point is flagged — so a genuinely dead file left after a refactor is still caught. docs-drift is wired into `.githooks/pre-push` and blocks a push on FAIL-severity drift (broken links, a reference doc that claims `status: synced` while stale, a wired gate whose file is missing); WARNING-severity issues such as a true orphan, or an inconsistent closeout state (orphan current-scope / half-closed / closeout-pending), do not block.
 
@@ -59,12 +60,21 @@ Use concrete checks, not assumptions.
 - State: `.omp/harness-state/backpressure-status`, `.omp/harness-state/test-history.json`
 - **Failure recording**: the OMP adapter routes a failed bash `tool_result` to `backpressure-failure-tracker`, so failed build/test/lint runs ARE recorded — `backpressure-gate` sees explicit FAIL state, not just absence of recent success. Failure means `isError: true` OR non-zero `details.exitCode` (OMP keeps `isError` false for non-zero command exits and reports the code in `details.exitCode`; verified empirically). Residual dependence: a failing command that still exits 0 (a runner that swallows the exit code) is recorded as success.
 
-### 4) `kickoff-detector`
+### 4) `review-gate`
+
+- File: `.omp/extensions/harness/gates/review-gate.mjs` (spawned via `commit-gates`)
+- Log: `.omp/harness-state/hook-debug.log` (written only when `HARNESS_DEBUG` is set)
+- Reads: `docs/reviews/review-<today>*.json` — machine evidence is a strict positional JSON tuple `["omp-review-evidence/v1", <diff_hash hex64>, <verdict: PASS|PASS WITH NOTES|FAIL>, <models|null>, <human_reviewed_by|null>, <reviewer>]`; the gate does NOT parse markdown (same-basename `.md` files are human reports — the former line-based CommonMark evidence parser was removed as a non-convergent attack surface). Second-perspective evidence = a MEASURED models array naming >=2 distinct families (written only after transcript-verifying the adversary's resolved family; thread/session ids are NOT evidence) **or** a human identity (never a model name) in the human_reviewed_by position. Validation is JSON.parse + exact arity + per-position type/enum/pattern checks — a tuple has no keys, so duplicate-key last-wins injection is structurally impossible; any malformation invalidates the FILE (ignored + warned, fail-closed). Also reads `docs/harness/review-skip` (audited override, same grammar: `["omp-review-override/v1", <reason>, <approved_by>, <diff_hash|UNVERIFIABLE>]` — commit-diff-bound, consumed on use, audited).
+- Writes: `docs/harness/audit.jsonl` — a `review_override` event (`{ts,event,actor,meta}`, cf. `adversarial_override`) when a valid override is consumed
+- A **bare** or non-tuple `review-skip` flag no longer bypasses the gate: there is no unaudited escape hatch. An invalid flag fails closed on high/critical with the exact copyable tuple (including the current diff hash) in the BLOCK message.
+- Override + `git commit -a` TOCTOU: consuming an override writes `audit.jsonl` (git-tracked) before the commit runs, which `-a` would sweep into the commit and desync the approved hash — so when `audit.jsonl`/`review-skip` is tracked (checked live via `git ls-files`), the override is NOT consumable under `-a/--all`: high/critical fails closed with stage-plus-plain-commit guidance, medium warns and ignores the flag.
+
+### 5) `kickoff-detector`
 
 - File: `.omp/extensions/harness/gates/kickoff-detector.mjs`
 - Reads: `docs/harness/kickoff-done` (suppresses reminder if exists)
 
-### 5) Architect verification + Completion Attack Gate
+### 6) Architect verification + Completion Attack Gate
 
 - Provided by oh-my-claudecode `architect` agent (discovered via OMP's task tool)
 - Not a file gate — invoked via agent delegation
@@ -80,7 +90,7 @@ Use concrete checks, not assumptions.
 1. Confirm gates directory exists: `test -d .omp/extensions/harness/gates && echo gates_ok`
 2. Confirm all gate files are present:
    ```bash
-   for h in context-gate read-tracker write-tracker commit-gates acceptance-gate backpressure-gate review-gate backpressure-tracker kickoff-detector; do
+   for h in context-gate read-tracker write-tracker commit-gates acceptance-gate backpressure-gate review-gate archive-guard backpressure-tracker kickoff-detector; do
      test -f ".omp/extensions/harness/gates/$h.mjs" && echo "$h: ok" || echo "$h: MISSING"
    done
    ```
@@ -118,6 +128,7 @@ When downgrading, final report MUST include:
 | Gate file not found in `.omp/extensions/harness/gates/` | Partial clone or deleted gate file | Re-clone template or restore from git; if blocked, activate manual checklist downgrade |
 | Gate exists but no events in `.omp/harness-state/hook-debug.log` | Debug logging is OFF by default (gated behind `HARNESS_DEBUG`) | An empty/absent log does NOT mean the gate is unwired. Set `HARNESS_DEBUG=1` to enable logging, then verify the `runGate(...)` reference in `.omp/extensions/harness/index.ts` and re-run a benign trigger. |
 | `acceptance-gate` repeatedly blocks completion | Missing evidence or unchecked AC in `current-scope.md` | Check off completed criteria or create `docs/harness/acceptance-done` override |
+| `review-gate` blocks a high/critical commit | No second-perspective evidence for the effective diff | Run the reviewer agent (writes the `.json` evidence sidecar), write a human-review sidecar (`["omp-review-evidence/v1", <hash>, "PASS", null, <name>, <name>]`), or create an audited override (`docs/harness/review-skip` with `["omp-review-override/v1", <reason>, <approved_by>, <hash>]`). The BLOCK message prints the exact copyable tuples with the real hash. |
 | `backpressure-gate` loops on failures | Underlying failing test/check never addressed | Stop retries, fix root cause, then re-run once with documented rationale |
 | `context-gate` blocks unexpectedly | `read-log.txt` missing or stale | Read the file first; if persistent, check `read-tracker` is wired in `.omp/extensions/harness/index.ts` |
 | Architect log missing for completed task | oh-my-claudecode not installed or architect agent unavailable | Run manual two-pass verification and mark Architect as downgraded in report |

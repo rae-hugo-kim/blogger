@@ -1,7 +1,7 @@
 ---
 name: bootstrap
 argument-hint: [--skip-optional]
-description: Bootstrap development environment with OMC discovery, MCP servers, and docs tooling
+description: Bootstrap development environment with OMC discovery and MCP servers
 ---
 
 # Bootstrap - Development Environment Setup
@@ -10,7 +10,7 @@ description: Bootstrap development environment with OMC discovery, MCP servers, 
 
 이 하네스 템플릿을 사용하기 위한 개발 환경을 구축한다.
 기존 OMC 설치 확인(OMP가 자동 발견), OMP MCP 설정에 범용 MCP 서버 등록,
-선택적 MCP 서버 안내, docs viewer 빌드 도구(mdBook + Mermaid)까지 한 번에 처리.
+선택적 MCP 서버 안내를 한 번에 처리.
 
 ## Non-Negotiables
 
@@ -54,28 +54,42 @@ OMP는 `~/.claude` 사용자 디렉터리에 설치된 기존 OMC(스킬 + 에�
 
 실패 시: 에러 메시지 그대로 출력, 수동 설치 안내 후 다음 단계로 진행.
 
-### Phase 2: Docs Build Tools (자동)
+### Phase 2: Docs Viewer 안내 (자동, 설치 없음)
 
-`scripts/docs-build.sh`와 `mdbook serve`가 의존하는 도구. 템플릿 fresh-clone
-에서 docs viewer 즉시 동작을 위해 설치.
+docs는 빌드 도구 없이 읽는다 — Obsidian으로 repo 루트를 vault로 열면 끝
+(설정은 `docs/README.md` 참조). Mermaid 검증은 하네스 익스텐션이 OMP 내장
+파서로 수행하므로 별도 도구(mmdc 등)가 필요 없다.
 
+출력: "✓ docs viewer: Obsidian (no build tooling required — see docs/README.md)"
+
+### Phase 2.5: 하네스 레포 위생 (자동, 멱등)
+
+로컬 아카이브 untracked 정책과 git hooks 활성화를 보장한다:
+
+```bash
+# 1) 로컬 아카이브 ignore 항목 (라인별 멱등 — 구버전 하네스 블록만 있는 레포도 누락분 보강)
+touch .gitignore
+while IFS= read -r line; do
+  grep -qxF "$line" .gitignore || echo "$line" >> .gitignore
+done <<'EOF'
+.omp/harness-state/
+.omp/state/
+docs/sum/
+docs/brainstorming/
+docs/reviews/
+docs/harness/*-skip
+docs/harness/*-done
+.omc/
+EOF
+# 2) 하네스 훅 활성화 (.githooks: post-commit no-op 스텁 + pre-push 아카이브/드리프트 검사)
+[ -d .githooks ] && git config core.hooksPath .githooks
+# 3) 이미 추적 중인 아카이브 감지 (있으면 push가 차단되므로 지금 안내)
+git ls-files docs/sum docs/reviews docs/brainstorming | head -5
 ```
-1. mdbook 체크:
-   - command -v mdbook → 있으면 "✓ mdbook already installed" 스킵
-   - 미설치 시: cargo install mdbook
-   - cargo 없으면 → "Rust/Cargo를 설치하세요: https://rustup.rs" 안내, 스킵
 
-2. mdbook-mermaid 체크:
-   - command -v mdbook-mermaid → 있으면 스킵
-   - 미설치 시: cargo install mdbook-mermaid
+추적 중인 아카이브가 발견되면: `git rm -r --cached docs/sum docs/reviews docs/brainstorming` 후 커밋을 안내하고, 서사 백업은 sum-vault(`/skill:sum`의 Vault backup 참조)로 안내한다.
 
-3. mmdc (mermaid-cli) 체크:
-   - command -v mmdc → 있으면 스킵
-   - 미설치 시: npm install -g @mermaid-js/mermaid-cli
-```
-
-셋 모두 선택적 — 설치 실패해도 중단하지 않고 계속 진행. docs viewer를
-나중에 사용하지 않을 프로젝트는 그대로 두고 넘어가도 됨.
+출력: "✓ repo hygiene: archives untracked + hooksPath=.githooks"
 
 ### Phase 3: 범용 MCP 서버 등록 (자동)
 
@@ -122,7 +136,7 @@ MCP 서버는 OMP 자체 MCP 설정에 등록한다 (`~/.claude.json` 아님).
 
 ### Installed
 - ✓ OMC vX.Y.Z (또는 — not installed)
-- ✓ mdbook / mdbook-mermaid / mmdc (또는 ✗ skipped)
+- ✓ docs viewer: Obsidian (no tooling)
 
 ### MCP Servers
 | Server | Status |
@@ -145,7 +159,7 @@ MCP 서버는 OMP 자체 MCP 설정에 등록한다 (`~/.claude.json` 아님).
 | Condition | Action |
 |-----------|--------|
 | Node.js 미설치 | 안내 후 중단 |
-| Cargo 미설치 | docs 빌드 도구(mdbook, mdbook-mermaid) 스킵, 경고 출력 후 계속 |
+| Cargo 미설치 | 무관 (docs 빌드 도구 불필요) — 계속 |
 | MCP 서버 등록 실패 | 해당 서버만 실패 표시, 계속 진행 |
 | 네트워크 오류 | 재시도 안내, 수동 명령어 제시 |
 | 이미 설치된 항목 | 스킵, 현재 버전 표시 |
