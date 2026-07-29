@@ -1,6 +1,7 @@
 # Local archives
 docs/sum/
 docs/brainstorming/
+docs/reviews/
 references/
 drafts/
 
@@ -20,6 +21,9 @@ __pycache__/
 
 # OMC state (transient)
 .omc/
+
+# Serena tool state (transient)
+.serena/
 
 # Environment variables
 .env*
