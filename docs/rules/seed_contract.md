@@ -6,7 +6,7 @@
 이 문서의 목표는 다음 두 가지다.
 
 - 사람이 읽는 요약과 별개로, 하네스가 기계적으로 해석 가능한 명세 형식을 고정한다.
-- `startdev`, 검증, scope gate, anti-hallucination 규칙이 동일한 기준을 보도록 만든다.
+- `startdev`, 검증, scope drift 점검(Surgical Changes·PR 리뷰), anti-hallucination 규칙이 동일한 기준을 보도록 만든다.
 
 ## Scope
 이 계약은 `docs/harness/seed.yaml`에 적용된다.
@@ -23,6 +23,7 @@
 
 - `version`
 - `status`
+- `task_id`
 - `goal`
 - `constraints`
 - `acceptance_criteria`
@@ -38,9 +39,21 @@
 - 초기값은 `1`
 - 구조가 바뀌면 증가
 
+### `task_id`
+- 문자열
+- kickoff 시 자동 생성
+- 형식: `YYYYMMDD-HHMMSS-<4자리 랜덤 hex>`
+- 동일 태스크의 재실행 구분에 사용 (audit.jsonl과 연결)
+- 수동 편집하지 않는다
+
 ### `status`
-- 허용값: `draft`, `approved`, `superseded`
+- 허용값: `draft`, `approved`, `superseded`, `done`
 - `kickoff` 직후 기본값은 `draft`
+- `done`: **작업 완료(closeout) 종료상태.** 작업이 끝나 main에 도달했을 때 closeout 절차가 `approved → done`으로 마킹하고 `completed: <YYYY-MM-DD>`를 동반한다. `superseded`(다른 seed로 대체됨)와 구분 — `done`은 "끝남", `superseded`는 "교체됨". **둘 다 종료상태라 acceptance-gate는 active AC로 취급하지 않는다**(닫힌 작업의 AC는 새 작업을 막지 않음).
+
+### `completed`
+- 선택 필드. `status: done`일 때만 동반(closeout이 기록).
+- 형식: `YYYY-MM-DD` (작업이 완료되어 main에 도달한 날짜).
 
 ### `goal`
 - 한 문단 또는 짧은 여러 줄 텍스트
@@ -95,7 +108,8 @@ references:
 아래 조건을 만족하지 않으면 유효하지 않다.
 
 - YAML 파싱 가능
-- 필수 필드 모두 존재
+- 필수 필드 10개 모두 존재 (version, status, task_id, goal, constraints, acceptance_criteria, out_of_scope, assumptions, risks, references)
+- `task_id` 형식 일치 (`YYYYMMDD-HHMMSS-XXXX`)
 - `acceptance_criteria` 길이 >= 1
 - `out_of_scope`, `assumptions`, `risks`, `references`는 배열
 - `status`가 허용값 중 하나
@@ -119,6 +133,7 @@ references:
 ```yaml
 version: 1
 status: draft
+task_id: "20260401-143000-a1b2"
 
 goal: >
   기존 API에 토큰 기반 인증을 추가한다.

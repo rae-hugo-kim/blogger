@@ -32,7 +32,8 @@ docs/harness/seed.yaml
 - YAML 파싱 성공
 - 필수 필드 존재
 - `acceptance_criteria` 최소 1개
-- `status`가 `draft` 또는 `approved`
+- `status`가 `draft` 또는 `approved` (active)
+  - `done`/`superseded`(종료상태)면 완료/대체된 작업이므로 seed 무효가 아니라 **새 `kickoff`로 새 작업(새 task_id) 생성**을 유도
 
 실패 시:
 - 바로 중단
@@ -54,8 +55,8 @@ docs/harness/seed.yaml
 - 최종 완료 판단의 기준
 
 ### `out_of_scope`
-- scope gate 입력
-- "하지 말아야 할 일" 체크
+- 이번 작업에서 하지 않는 일 (prose). scope drift 방지용
+- 에이전트가 구현 중 다시 읽어 자체 제한 (자동 차단 게이트 아님 — scope-gate 폐기됨)
 
 ### `assumptions`
 - anti-hallucination 검토 입력
