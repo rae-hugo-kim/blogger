@@ -24,6 +24,6 @@ Blowfish 렌더 훅이 `페이지 번들 → assets/` 순으로 이미지를 찾
 ## 규칙
 
 - 파일·폴더명은 ASCII 슬러그로 고정해요 (`rae`, `portrait.png`). 여러 글이 참조하므로 이름 변경은 링크 전수 수정과 함께.
-- 시트는 git에 안 올라가므로 **백업이 없어요**. 원본(외부 작업 문서)을 마스터로 유지하거나 별도 비공개 백업을 두세요.
-- `assets/img/characters/`에 승격한 이미지는 repo와 블로그 양쪽에 **공개**돼요. 승격 전에 공개 가능 여부를 확인하세요.
-- 생성 후보는 `references/characters/<슬러그>/`에 쌓고, 채택본만 `assets/img/characters/<슬러그>/`로 승격해요.
+- **보존 정책**: 시트·채택 이미지는 gitignore라 이 repo가 백업하지 않아요. **정식 거처는 private vault**(`sum-vault/blogger/characters/` — docs/ + references/ 미러). 고가치 산출물을 갱신하면 vault에 커밋해 동기화하세요 — 워크트리 삭제에서 살아남는 유일한 경로예요. 후보 덤프 등 일회성은 보존 대상이 아니에요.
+- `assets/img/characters/` 승격은 **글에서 실제 사용하는 파일만, 사용 시점에** 해요. 승격 = repo·블로그 양쪽 공개.
+- 생성 후보는 `references/characters/<슬러그>/`에 쌓고, 선별·확정은 시트 문서와 vault로 관리해요.
