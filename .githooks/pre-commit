@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# pre-commit: block committing review-stage draft posts (front matter `draft: true`)
+# under content/posts/.
+#
+# This is a PUBLIC repo: a pushed markdown source is readable on GitHub even though
+# Hugo (built without -D) never renders it. The publish pipeline is:
+#   drafts/<slug>/          gitignored, local-only writing
+#   -> scripts/normalize.py assembles into content/posts/<slug>/ with draft: true
+#   -> local review, flip to draft: false, THEN commit (commit == publish decision)
+# The review window is the only spot gitignore cannot cover; this hook closes it.
+#
+# LOCAL hook: not overwritten by harness-sync (its whitelist covers only
+# .githooks/post-commit and .githooks/pre-push). Activated via
+# `git config core.hooksPath .githooks`. Emergency bypass: git commit --no-verify
+set -euo pipefail
+
+offenders=()
+# -z (NUL-delimited): non-ASCII (Korean) paths arrive raw, not c-quoted.
+# --diff-filter=d: deletions can never leak content.
+# `git commit -a` stages before hooks run, so swept files are covered too.
+while IFS= read -r -d '' f; do
+  case "$f" in
+    *.md) ;;
+    *) continue ;;
+  esac
+  # Inspect the STAGED blob, not the worktree copy.
+  content="$(git show ":$f" 2>/dev/null)" || continue
+  printf '%s\n' "$content" | head -1 | grep -qx -- '---' || continue
+  # Front matter = lines after the opening --- up to the closing ---.
+  if printf '%s\n' "$content" | sed -n '2,/^---$/p' \
+      | grep -qE '^draft:[[:space:]]*true[[:space:]]*$'; then
+    offenders+=("$f")
+  fi
+done < <(git diff --cached --name-only -z --diff-filter=d -- content/posts)
+
+if ((${#offenders[@]})); then
+  {
+    echo "pre-commit blocked: draft posts (draft: true) staged under content/posts/:"
+    printf '  - %s\n' "${offenders[@]}"
+    echo "This repo is public — pushed sources are readable on GitHub even if Hugo hides them."
+    echo "Finish the review locally and flip to 'draft: false' before committing (commit == publish)."
+    echo "Keep work-in-progress in drafts/ (gitignored). Emergency bypass: git commit --no-verify"
+  } >&2
+  exit 1
+fi
+exit 0

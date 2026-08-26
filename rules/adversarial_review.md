@@ -26,6 +26,14 @@
 2. **리뷰 수행 세션 ≠ 변경 작성 세션**: 세션이 프로토콜을 직접 수행하는 경로에서 Pass 1(셀프 분석)의 독립성 조건이다. 변경을 작성한 세션이 자기 변경을 Pass 1으로 심사하면 self-review bias 제거라는 프로토콜의 목적이 무너진다.
 3. **게이트는 JSON tuple 사이드카만 검증**: review-gate는 `docs/reviews/review-<ts>.json`의 고정 arity tuple만 읽는다. 수행 주체가 무엇이든 증거 형식과 검증 경로는 같다.
 
+4. **Pass 1의 모델도 실측한다 (요청 selector 금지)**: Pass 1의 모델은 실행 중 바뀔 수 있으므로, 사이드카에는 자기 트랜스크립트의 `model_change` 레코드(폴백 포함)를 실측해 기재한다. 요청한 selector를 그대로 적으면 실제로 심사한 모델이 증거에서 빠진다.
+
+   실측 근거(2026-07-30, precommit-gate-enforcement 5라운드 전건): `@slow`(=`anthropic/claude-fable-5`)가 **적대 리뷰의 우회 프로브 단계에서 매번 `Refusal (cyber)`를 반환**했고, `retry.fallbackChains`가 세션을 `anthropic/claude-opus-5`로 옮겨 pass 1의 47~80%가 opus에서 수행됐다. 사이드카 5건 모두 primary만 기재해 이 사실이 증거에서 누락됐다. 계열(anthropic)이 같아 이종성 판정은 불변이었으나, **"기록되지 않은 대체"라는 결함 유형 자체가 발생**했다. 거부는 프로브가 공격 도구로 분류되기 때문이며, 회피 대상이 아니라 회계 대상이다 — 폴백을 막지 말고 기재하라.
+
+5. **디스패치 전 라우팅 프로브**: 이종 리뷰가 필요한 커밋에서 reviewer를 스폰하기 전, adversary 경로 원샷 프로브(한 단어 응답 + 트랜스크립트 `model_change` 실측)로 비주계열 프로바이더 인증을 확인한다. 로컬 크리덴셜 존재("로그인됨" 표시)는 서버측 토큰 유효성의 증거가 아니다 — 유효성은 첫 API 호출에서야 판명된다.
+
+   실측 근거(2026-08-03, docs/sum/session_2026-08-03_pr-cleanup-gate-override-codex-auth.md): openai-codex 토큰이 서버측 회수된 상태에서 adversary/code-reviewer 스폰 5회 전부 1.6~3.9초 만에 0바이트 즉사(`authentication token has been invalidated`), 리뷰어가 7분 완주한 뒤에야 이종성 불성립이 판명되어 감사 오버라이드로 우회했다. 프로브 1회(~5초)가 완주 후 발견보다 싸다.
+
 부기 — 세션 수행 경로의 모델 회계: Pass 1의 모델은 `@slow`가 아니라 그 세션의 모델이며, 이종성(≥2 distinct family) 판정의 기준 계열도 세션 모델 계열이다.
 
 ---

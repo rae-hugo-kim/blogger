@@ -97,7 +97,9 @@ PATHS=(
   "INDEX.md"
   "EXAMPLES.md"
   ".omp/extensions/harness"
+  ".githooks/pre-commit"
   ".githooks/post-commit"
+  ".githooks/post-merge"
   ".githooks/pre-push"
   "scripts/harness-version-bump.sh"
   "scripts/harness-sync.sh"
@@ -119,6 +121,17 @@ PATHS=(
   ".omp/skills/gh-loop"
   ".omp/skills/gh-fanout"
   ".omp/agents"
+  # docs/rules harness contracts — INDIVIDUAL FILES on purpose: docs/ is consumer
+  # project space, and a directory entry would rm -rf consumer-custom files there.
+  # A new docs/rules contract in the source repo MUST be added here explicitly.
+  "docs/rules/artifact_roles_contract.md"
+  "docs/rules/closeout_contract.md"
+  "docs/rules/glossary_policy.md"
+  "docs/rules/kickoff_output_contract.md"
+  "docs/rules/scope_self_detect_policy.md"
+  "docs/rules/seed_contract.md"
+  "docs/rules/seed_evolution_policy.md"
+  "docs/rules/startdev_seed_contract.md"
 )
 
 if [[ $DRY_RUN -eq 1 ]]; then
@@ -154,6 +167,12 @@ for p in "${PATHS[@]}"; do
     cp -r "$tmp/$p" "$REPO_ROOT/$p"
   else
     cp "$tmp/$p" "$REPO_ROOT/$p"
+    # `cp` PRESERVES an existing destination's mode, so a hook that is already present and
+    # non-executable stays non-executable — and git skips non-executable hooks WITHOUT a
+    # warning, silently disarming the only blocking surface (review round 2, measured).
+    case "$p" in
+      .githooks/*) chmod +x "$REPO_ROOT/$p" ;;
+    esac
   fi
 done
 

@@ -4,6 +4,9 @@ docs/brainstorming/
 docs/reviews/
 references/
 drafts/
+# Character sheets: local-only (public repo), README stays tracked as the convention doc
+docs/characters/*
+!docs/characters/README.md
 
 # Harness runtime state (OMP)
 .omp/harness-state/
