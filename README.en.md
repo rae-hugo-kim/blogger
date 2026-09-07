@@ -108,7 +108,7 @@ Delete the ones you don't need — the rest keeps working.
 |----------|-------|
 | **Safety** | safety_security, agent_security, anti_hallucination, repo_command_discovery |
 | **Quality** | coding_standards, verification_tests_and_evals, change_control, tdd_policy, code_review_policy, quality_gates |
-| **Tools** | mcp_policy, context7_policy, hook_recipes |
+| **Tools** | mcp_policy, hook_recipes |
 | **Process** | assetization, commit_and_pr, harness_integration_contract |
 | **Docs** | documentation_policy |
 | **Operations** | context_management, session_persistence, cost_awareness, learning_policy |
