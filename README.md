@@ -108,7 +108,7 @@ kickoff → startdev 흐름에서 자동으로 작동하는 장치들:
 |------|----------|
 | **안전** | safety_security, agent_security, anti_hallucination, repo_command_discovery |
 | **품질** | coding_standards, verification_tests_and_evals, change_control, tdd_policy, code_review_policy, quality_gates |
-| **도구** | mcp_policy, context7_policy, hook_recipes |
+| **도구** | mcp_policy, hook_recipes |
 | **프로세스** | assetization, commit_and_pr, harness_integration_contract |
 | **문서** | documentation_policy |
 | **운영** | context_management, session_persistence, cost_awareness, learning_policy |

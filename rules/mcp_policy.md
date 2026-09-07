@@ -9,7 +9,7 @@ This document defines when and how to use MCP (Model Context Protocol) servers.
 When multiple tools can accomplish the same task:
 
 1. **MCP tools** (specialized, maintained) over generic alternatives
-2. **Cached/indexed sources** (Context7) over live web search
+2. **Source-verified lookups** (`librarian` 에이전트의 소스 직독, 공식 문서 `read`) over live web search
 
 ---
 
@@ -86,24 +86,19 @@ CLI + Skill 래퍼 경로로 도입(MCP 서버 아님 → context tax 0). 상세
 
 ---
 
-## Context7 (Library Documentation)
+## Context7 — 정책 폐기 (2026-08-26)
 
-**Purpose**: Retrieve up-to-date documentation and code examples for libraries/frameworks.
+Context7 MCP에 대한 MUST 정책(신규 외부 API/SDK·버전 민감 문법 시 문서 조회)과
+`rules/context7_policy.md`를 제거했다.
 
-### MUST use when:
-- Introducing **new** external APIs, SDKs, or dependencies
-- Using version-sensitive syntax or features
-- Suspected deprecations or breaking changes
-- Unfamiliar library patterns
-
-### MAY skip when:
-- In-repo code already demonstrates the same API usage pattern
-- Well-known, stable APIs (e.g., `JSON.parse`, `Array.map`)
-
-### Workflow:
-1. Call `resolve-library-id` first to get the library ID
-2. Then call `query-docs` with specific questions
-3. Limit to 3 calls per question
+- **근거**: 102세션 트랜스크립트 실측 — 언급 8회, 최근(07-30 이후 9세션) 1회,
+  게이트·스킬 배선 0. 서버 자체가 현 세션에 미마운트(OMP MCP 등록부는 exa·tavily뿐).
+  직무는 `librarian` 에이전트(라이브러리 소스 직독 — source-verified), 공식 문서
+  `read` 직독, web search(내장 + Exa/Tavily)가 흡수한다 — Serena와 동형 구도
+  (특화 MCP의 고유 기능이 내장 도구 + 에이전트 조합에 흡수).
+- **서버는 폐기하지 않음**: ad-hoc 등록·사용은 MAY (`omp://mcp-config.md`).
+- **재도입 트리거**: 버전 민감 API 오구현이 librarian/직독 경로에서 반복
+  관측될 때. 복원은 git history의 `rules/context7_policy.md`와 이 섹션 참조.
 
 ---
 
@@ -115,8 +110,15 @@ Serena MCP에 대한 MUST/SHOULD 정책(구 레이어 D, 심볼 단위 의미 �
   편집)은 실재하나, agentic 편집은 블록 재생성 + `edit` 라인 앵커가 흡수하고
   (context-gate의 read-before-edit 강제로 "안 읽고 편집"이라는 전제 자체가 불성립),
   탐색·rename·진단 수요는 레이어 A/C가 흡수한다 — 정책이 가치를 벌지 못함.
-- **서버는 폐기하지 않음**: 설치는 그대로이며 ad-hoc 사용은 MAY (OMP에서 쓰려면 OMP MCP config 등록 필요 — `omp://mcp-config.md`).
-  켜고 끄는 법: `rules/context_management.md`의 lazy-loading 스크립트 참조.
+- **마운트도 제거 (2026-08-26)**: 원래는 "서버는 폐기하지 않음, ad-hoc MAY"였으나,
+  bootstrap 스킬 Phase 3가 user 레벨(`~/.omp/agent/mcp.json`)에 자동 재등록해 폐기가
+  무효화되는 문제가 확인됐다. bootstrap 목록에서는 상류에서 제거됐고(2026.72+),
+  잔존하던 user config 엔트리도 제거했다.
+  추가 근거: OMP 하네스에서 `mcp__*` 도구는 advisory mcp-gate만 통과하므로
+  (`.omp/extensions/harness/index.ts`의 `isEditToolName`은 `edit`/`write`만 커버),
+  serena의 편집/셸 도구는 context-gate(read-before-edit)와 destructive-guard를
+  우회한다 — 마운트 자체가 게이트 모델을 약화시킨다.
+  ad-hoc 사용이 필요하면 그때 `/mcp add`로 일시 등록 후 제거.
 - **재도입 트리거**: 2000줄+ 파일 다수의 대형 레포 작업이 일상화되거나, 의미 편집이
   `edit` 대비 우위인 사례가 실제 관측될 때. 복원은 git history의 이 섹션 참조.
 
@@ -151,13 +153,13 @@ Serena MCP에 대한 MUST/SHOULD 정책(구 레이어 D, 심볼 단위 의미 �
 
 ### SHOULD use when:
 - Current events or recent releases (post knowledge cutoff)
-- Error messages not found in repo or Context7
+- Error messages not found in the repo
 - Comparing multiple solutions/approaches
 - Finding community discussions or GitHub issues
 
 ### MAY skip when:
 - Information is available in repo or offline knowledge
-- Context7 has the documentation needed
+- The needed docs were already obtained via the librarian agent or direct doc reads
 - Question is about stable, well-documented features
 
 ---

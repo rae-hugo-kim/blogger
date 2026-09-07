@@ -16,6 +16,19 @@ This file is **always-on** agent policy. Keep it short.
 - If a linked module conflicts with this file, **this file wins**.
 - **This policy complements user-global rules** (OMP also discovers `~/.claude/CLAUDE.md` and OMC skills/agents) — it does not replace them.
 
+## Consumer extension points
+
+This file, `rules/`, `checklists/`, `templates/`, `.omp/extensions/harness/`, the harness skills, and the four harness agents are **harness-owned**: `harness-check` overwrites them (remote wins) on every sync, and directory entries are `rm -rf` + copy. A project built from this template keeps its own policy in the places the sync never touches:
+
+| Need | Put it in | How OMP loads it |
+|---|---|---|
+| Project rules (prompting conventions, domain constraints) | `.omp/rules/<name>.md` | Native rule file: `alwaysApply: true` injects it every session; `globs`/`description` list it in the rulebook (`rule://<name>`); `condition` makes it a TTSR stream rule. Stronger than a `rules/` link. |
+| Short hard requirements that must stay visible in long sessions | `.omp/RULES.md` | Sticky always-apply rule, re-attached near the current turn. |
+| Project background and the project's own module index | `.omp/AGENTS.md` | Project context, loaded **together with** this file. |
+| Custom agents / skills | `.omp/agents/<custom>.md`, `.omp/skills/<custom>/` | Discovered like the harness ones; the sync lists harness agents and skills per file/dir and does not sweep siblings. |
+
+Precedence: a project rule in `.omp/rules/` or `.omp/RULES.md` is the **local specialization** of this policy and wins over a linked module on the same topic; only this file's MUSTs (safety, gates, verification) are not overridable that way. Never add project files under `rules/`, `.omp/agents/` harness names, or the harness skill directories — they are deleted or overwritten on the next sync.
+
 ## Harness Enforcement (OMP)
 
 This repo ships its own enforcement layer as an **OMP extension**. The following are enforced automatically:
@@ -101,7 +114,7 @@ Harness verification contract details: [`rules/harness_integration_contract.md`]
 - **Verification**: every user-impacting change must include at least one reproducible verification artifact.
 - **Docs/policy-only mode**: for pure markdown/policy/template edits, follow the docs-only verification path in `rules/verification_tests_and_evals.md` and include its required evidence format.
 - **Evidence**: cite concrete evidence for key decisions (file paths + excerpts or command output).
-- **Reference doc sync**: in the same PR, update `claudedocs/CLAUDEKR.md` (Korean mirror of this file) or explicitly mark it as stale.
+- **Reference doc sync (source repo only)**: in the omp source repo, update `claudedocs/CLAUDEKR.md` (Korean mirror of this file) in the same PR or explicitly mark it as stale. Consumer repos have no such mirror (`claudedocs/` is not synced; an older `init` may have left a stale copy — delete it, it is not maintained).
 - **Scope self-detection (L1)**: during a session, when a scope-add / fix / new requirement appears, propose AC and either silent-append (testable + unambiguous) or ask on a material fidelity gap (push→pull) — never let a code change proceed with no tracking AC ([`docs/rules/scope_self_detect_policy.md`](docs/rules/scope_self_detect_policy.md); mechanical backstop = `acceptance-gate`).
 - **Cycle intake (L1)**: on receiving a new instruction, judge it against the 1-cycle definition (one-line verifiable completion check, singular deliverable, one-session scale). If it fails, propose a numbered decomposition with per-cycle check sentences before implementing — one proposal only; the user's "just proceed" is final ([`rules/cycle_definition.md`](rules/cycle_definition.md)).
 
@@ -126,7 +139,7 @@ If you cannot comply with any MUST:
 ## MCP Server Policy (Trigger-based)
 
 - See [`rules/mcp_policy.md`](rules/mcp_policy.md) for full policies on all MCP servers. Servers are registered in OMP's MCP config (`omp://mcp-config.md`).
-- **Context7**: MUST use for new external APIs/SDKs, dependencies, version-sensitive syntax.
+- **External library/API truth**: use the `librarian` agent (source-reading) or direct official-doc reads. (Context7 policy retired 2026-08-26 — see `rules/mcp_policy.md`.)
 - **Supabase**: MUST use migrations for DDL; MAY use direct SQL for queries.
 - **Web Search**: SHOULD use for current events, errors, latest docs.
 
@@ -144,7 +157,6 @@ If you cannot comply with any MUST:
 - Repo command discovery: [`rules/repo_command_discovery.md`](rules/repo_command_discovery.md)
 - Information discovery (breadth-first): [`rules/information_discovery.md`](rules/information_discovery.md)
 - MCP server policies: [`rules/mcp_policy.md`](rules/mcp_policy.md)
-- Context7 trigger policy: [`rules/context7_policy.md`](rules/context7_policy.md)
 - Verification (tests + evals): [`rules/verification_tests_and_evals.md`](rules/verification_tests_and_evals.md)
 - Change control (minimal change, scope, tidy): [`rules/change_control.md`](rules/change_control.md)
 - Documentation policy (optional): [`rules/documentation_policy.md`](rules/documentation_policy.md)
@@ -158,6 +170,7 @@ If you cannot comply with any MUST:
 - Cost awareness: [`rules/cost_awareness.md`](rules/cost_awareness.md)
 - Learning policy: [`rules/learning_policy.md`](rules/learning_policy.md)
 - Coding standards: [`rules/coding_standards.md`](rules/coding_standards.md)
+- Prompt engineering (LLM pipeline prompt design, trust boundaries): [`rules/prompt_engineering.md`](rules/prompt_engineering.md)
 - Documentation standards: [`rules/doc_standards.md`](rules/doc_standards.md)
 - Writing style (human-facing tone): [`rules/writing_style.md`](rules/writing_style.md)
 - Agent security: [`rules/agent_security.md`](rules/agent_security.md)
