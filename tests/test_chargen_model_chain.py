@@ -99,3 +99,36 @@ def test_generate_raises_when_all_models_fail(chargen, monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         chargen.generate_openai("k", "p", [], "1024x1024", 1, False, False)
     assert "flare" in str(exc.value) and "g2" in str(exc.value)
+
+
+def _fake_codex_run(returncode, write_bytes):
+    """codex exec 대역: -C 디렉토리에 out.png을 write_bytes로 남기고 returncode 반환."""
+    from pathlib import Path
+    import subprocess
+
+    def run(cmd, **kwargs):
+        td = cmd[cmd.index("-C") + 1]
+        if write_bytes is not None:
+            (Path(td) / "out.png").write_bytes(write_bytes)
+        return subprocess.CompletedProcess(cmd, returncode, stdout="", stderr="boom")
+
+    return run
+
+
+def test_codex_rejects_nonzero_exit_even_with_file(chargen, monkeypatch):
+    """리뷰 확정 medium: 파일이 있어도 비정상 종료면 성공 처리 금지."""
+    monkeypatch.setattr(chargen.subprocess, "run", _fake_codex_run(1, b"png-bytes"))
+    with pytest.raises(RuntimeError, match="비정상 종료"):
+        chargen.generate_codex("p", [], "1024x1024", 1, False, False)
+
+
+def test_codex_rejects_empty_file(chargen, monkeypatch):
+    """exit 0이어도 0바이트 PNG를 게시하지 않는다."""
+    monkeypatch.setattr(chargen.subprocess, "run", _fake_codex_run(0, b""))
+    with pytest.raises(RuntimeError, match="파일 미생성/빈 파일"):
+        chargen.generate_codex("p", [], "1024x1024", 1, False, False)
+
+
+def test_codex_success_returns_blob(chargen, monkeypatch):
+    monkeypatch.setattr(chargen.subprocess, "run", _fake_codex_run(0, b"png-bytes"))
+    assert chargen.generate_codex("p", [], "1024x1024", 1, False, False) == [b"png-bytes"]

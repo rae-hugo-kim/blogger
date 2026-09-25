@@ -204,10 +204,12 @@ def generate_codex(prompt, refs, size, n, transparent, verbose):
             if verbose:
                 print(f"[codex] cut {i + 1}/{n} 생성 중 (컷당 수 분 소요)")
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=CODEX_TIMEOUT)
-            if not target.is_file():
+            blob = target.read_bytes() if target.is_file() else b""
+            if res.returncode != 0 or not blob:
                 tail = ((res.stdout or "") + "\n" + (res.stderr or ""))[-800:]
-                raise RuntimeError(f"codex 생성 실패 (exit {res.returncode}, 파일 미생성): {tail}")
-            blobs.append(target.read_bytes())
+                reason = "파일 미생성/빈 파일" if not blob else "비정상 종료"
+                raise RuntimeError(f"codex 생성 실패 (exit {res.returncode}, {reason}): {tail}")
+            blobs.append(blob)
     return blobs
 
 
@@ -231,6 +233,8 @@ def main() -> int:
 
     if bool(args.prompt) == bool(args.prompt_file):
         ap.error("prompt 인자와 -P 중 정확히 하나를 지정")
+    if args.model is not None and not args.model.strip():
+        ap.error("-m/--model 값이 비어 있음 — 모델 ID를 지정하거나 옵션을 생략")
     if args.model and args.provider in ("auth", "gemini"):
         ap.error(f"--model은 API(OpenAI) 전용 — --provider {args.provider}와 함께 쓸 수 없음")
     provider = args.provider or ("openai" if args.model else "auth")
