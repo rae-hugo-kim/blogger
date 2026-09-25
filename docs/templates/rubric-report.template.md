@@ -1,4 +1,4 @@
-# Rubric Report
+# Rubric Report Template
 
 ## Result
 - goal_clarity: HIGH|MEDIUM|LOW
