@@ -7,7 +7,7 @@
 // checkpoint commits stay quiet (mid-implementation is exactly when
 // context_management.md says not to break), (c) the note rides the SAME
 // append-only content patch as the drift note — never replacing tool output,
-// and (d) the note names the rule it re-arms (rules/cycle_definition.md) and
+// and (d) the note names the rule it re-arms (.omp/rules/harness-cycle_definition.md) and
 // the /clear handoff.
 
 import { test } from 'node:test';
@@ -37,7 +37,7 @@ test('CYCLE_BOUNDARY_NOTE names the rule and the /clear handoff', () => {
   const m = src.match(/const CYCLE_BOUNDARY_NOTE =([\s\S]*?);/);
   assert.ok(m, 'index.ts must define CYCLE_BOUNDARY_NOTE');
   assert.match(m[1], /cycle_definition\.md/,
-    'the nudge must point the agent at rules/cycle_definition.md');
+    'the nudge must point the agent at .omp/rules/harness-cycle_definition.md');
   assert.match(m[1], /\/clear/,
     'the nudge must carry the /clear handoff so the boundary actually ends the session');
 });
@@ -55,7 +55,7 @@ test('isWipCommit is imported from git-commit-detect (same lexer as the gates)',
 
 test('bash tool_result: nudge sits behind the commit-success guard and skips WIP commits', () => {
   const bash = bashBranch();
-  const guard = bash.search(/isGitCommit\(command\)\s*&&\s*!bashRunFailed\(event\)/);
+  const guard = bash.search(/if \(landed\) \{/);
   assert.notEqual(guard, -1, 'the nudge must share the commit-success guard with the drift recheck');
   const wipGuarded = bash.search(/if \(!isWipCommit\(command\)\) notes\.push\(CYCLE_BOUNDARY_NOTE\)/);
   assert.notEqual(wipGuarded, -1,
