@@ -40,6 +40,8 @@ description: "3-pass adversarial verification layer: reviewer + heterogeneous ad
 
 부기 — 세션 수행 경로의 모델 회계: Pass 1의 모델은 `@slow`가 아니라 그 세션의 모델이며, 이종성(≥2 distinct family) 판정의 기준 계열도 세션 모델 계열이다.
 
+부기 — 가용성 판단: `omp usage`의 100% 표시는 모델을 쓸 수 없다는 증거가 아니다. 2026-09-26 openai-codex 7d 창이 100%로 보였지만 omp는 이를 `warning`으로 분류했고 `gpt-6-astra` 요청은 정상 응답했다. 이종 패스를 포기하거나 우회하기 전에 5번의 원샷 프로브로 확인한다. 불변식 2의 보완(독립 Pass 1)에는 비작성 세션만 있으면 되고, 다른 모델 계열은 필요하지 않다.
+
 ---
 
 ## 3개 게이트 정의
@@ -78,6 +80,7 @@ description: "3-pass adversarial verification layer: reviewer + heterogeneous ad
 
 1. **정상 해제**: CRITICAL 항목 수정 후 해당 게이트 재실행.
 2. **사용자 명시적 override**: `docs/harness/audit.jsonl`에 `adversarial_override` 이벤트 기록 후 진행.
+3. **PASS 이후의 low 항목**: 사이드카는 diff 해시에 바인딩되므로 PASS(WITH NOTES)를 받은 diff는 동결하고, 남은 low·문서 정밀도 항목은 커밋 뒤 **별도 docs 커밋**에서 고친다 — 같은 diff를 손대면 해시가 바뀌어 재리뷰 라운드가 필요하다(2026-09-29 #56 r10, `docs/sum/session_2026-09-29_issue56-closeout-ac-record-pr59.md` D4).
 
 ---
 
