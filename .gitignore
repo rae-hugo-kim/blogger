@@ -8,6 +8,11 @@ drafts/
 docs/characters/*
 !docs/characters/README.md
 
+# One-off human HTML artifacts (.omp/rules/harness-doc_standards.md R4); README files stay trackable
+artifacts/**
+!artifacts/**/
+!artifacts/**/README.md
+
 # Harness runtime state (OMP)
 .omp/harness-state/
 .omp/state/
