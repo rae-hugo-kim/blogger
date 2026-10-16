@@ -4,6 +4,9 @@ docs/brainstorming/
 docs/reviews/
 references/
 drafts/
+# Author sample corpus for /skill:draft (local-only; README stays tracked as the convention doc)
+samples/*
+!samples/README.md
 # Character sheets: local-only (public repo), README stays tracked as the convention doc
 docs/characters/*
 !docs/characters/README.md
